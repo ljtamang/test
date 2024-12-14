@@ -54,7 +54,19 @@ class GitRepoManager:
             return self._clone_repo(target_path, branch, sparse, sparse_paths)
 
     def _update_repo(self, target_path: Path, branch: str) -> Path:
-        """Update existing repository."""
+        """
+        Update existing repository with improved error handling.
+        
+        Args:
+            target_path (Path): Path to the existing repository
+            branch (str): Branch to update and checkout
+            
+        Returns:
+            Path: Path to the updated repository
+            
+        Raises:
+            GitCommandError: If any git operation fails
+        """
         try:
             repo = Repo(target_path)
             origin = repo.remotes.origin
@@ -62,29 +74,58 @@ class GitRepoManager:
             # Fetch latest changes
             origin.fetch()
             
+            # Store current branch
+            current = repo.active_branch
+            
+            # Reset any local changes
+            repo.git.reset('--hard')
+            repo.git.clean('-fd')
+            
             # Check if branch exists locally
             if branch in repo.heads:
                 local_branch = repo.heads[branch]
             else:
                 # Create local branch tracking remote
                 local_branch = repo.create_head(branch, origin.refs[branch])
-                local_branch.set_tracking_branch(origin.refs[branch])
             
-            # Checkout and pull
+            # Set up tracking and checkout
+            local_branch.set_tracking_branch(origin.refs[branch])
             local_branch.checkout()
-            origin.pull()
+            
+            # Pull with specific options for better reliability
+            repo.git.pull('--ff-only', '--verbose')
             
             return target_path
             
         except GitCommandError as e:
-            raise GitCommandError(f"Failed to update repository: {e.command}", e.status, e.stderr)
+            # Add more context to the error
+            raise GitCommandError(
+                f"Failed to update repository at {target_path}. "
+                f"Original error: {e.command}",
+                e.status,
+                e.stderr
+            )
 
     def _clone_repo(self, 
                     target_path: Path,
                     branch: str,
                     sparse: bool,
                     sparse_paths: Optional[List[str]]) -> Path:
-        """Clone repository (either sparse or regular)."""
+        """
+        Clone repository (either sparse or regular).
+        
+        Args:
+            target_path (Path): Where to clone the repository
+            branch (str): Branch to clone
+            sparse (bool): Whether to perform sparse checkout
+            sparse_paths (Optional[List[str]]): Paths to include in sparse checkout
+            
+        Returns:
+            Path: Path to the cloned repository
+            
+        Raises:
+            GitCommandError: If clone operation fails
+        """
         target_path.mkdir(parents=True, exist_ok=True)
         
         try:
@@ -93,10 +134,24 @@ class GitRepoManager:
             else:
                 return self._regular_clone(target_path, branch)
         except GitCommandError as e:
-            raise GitCommandError(f"Failed to clone repository: {e.command}", e.status, e.stderr)
+            raise GitCommandError(
+                f"Failed to clone repository to {target_path}. "
+                f"Original error: {e.command}",
+                e.status,
+                e.stderr
+            )
     
     def _regular_clone(self, target_path: Path, branch: str) -> Path:
-        """Perform a regular git clone."""
+        """
+        Perform a regular git clone.
+        
+        Args:
+            target_path (Path): Where to clone the repository
+            branch (str): Branch to clone
+            
+        Returns:
+            Path: Path to the cloned repository
+        """
         Repo.clone_from(
             self.repo_url,
             str(target_path),
@@ -106,7 +161,17 @@ class GitRepoManager:
         return target_path
     
     def _sparse_clone(self, target_path: Path, branch: str, sparse_paths: List[str]) -> Path:
-        """Perform a sparse checkout."""
+        """
+        Perform a sparse checkout.
+        
+        Args:
+            target_path (Path): Where to clone the repository
+            branch (str): Branch to clone
+            sparse_paths (List[str]): Paths to include in sparse checkout
+            
+        Returns:
+            Path: Path to the cloned repository
+        """
         # Initialize repo
         repo = Repo.init(target_path)
         
@@ -131,4 +196,5 @@ class GitRepoManager:
         return target_path
 
     def __repr__(self) -> str:
+        """String representation of the GitRepoManager."""
         return f"GitRepoManager(repo_url='{self.repo_url}')"
