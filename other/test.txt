@@ -84,7 +84,51 @@ class GitMetadataExtractor:
                 
         except Exception as e:
             return None
+    def _batch_get_commit_dates(self, rel_paths: List[str]) -> Dict[str, str]:
+    """
+    Get commit dates for multiple files in batch with multiple fallback methods.
+    """
+    commit_dates = {}
+    
+    # Method 1: Using iter_commits and stats (fastest)
+    try:
+        for commit in self.repo.iter_commits():
+            for rel_path in rel_paths:
+                if rel_path not in commit_dates:
+                    try:
+                        if rel_path in commit.stats.files:
+                            commit_dates[rel_path] = commit.committed_datetime.isoformat()
+                    except:
+                        continue
+    except:
+        pass
 
+    # Method 2: Try git log for files without commit dates
+    remaining_paths = [path for path in rel_paths if path not in commit_dates]
+    if remaining_paths:
+        for rel_path in remaining_paths:
+            try:
+                commits = list(self.repo.iter_commits(paths=rel_path, max_count=1))
+                if commits:
+                    commit_dates[rel_path] = commits[0].committed_datetime.isoformat()
+            except:
+                pass
+
+    # Method 3: Use git blame as last resort
+    remaining_paths = [path for path in rel_paths if path not in commit_dates]
+    if remaining_paths:
+        for rel_path in remaining_paths:
+            try:
+                full_path = os.path.join(self.repo_root, rel_path)
+                if os.path.exists(full_path):
+                    blame = self.repo.blame('HEAD', rel_path)
+                    if blame and blame[0]:
+                        commit = blame[0][0]
+                        commit_dates[rel_path] = commit.committed_datetime.isoformat()
+            except:
+                pass
+
+    return commit_dates
     def process_files_batch(self, file_paths: Optional[List[str]] = None) -> List[Dict]:
         """Process multiple files in parallel using ThreadPoolExecutor."""
         if file_paths is None:
@@ -125,6 +169,93 @@ def save_metadata_to_json(metadata_list: List[Dict], output_file: str):
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(metadata_list, f, indent=2, ensure_ascii=False)
 
+
+
+############
+
+def _batch_get_commit_dates(self, rel_paths: List[str]) -> Dict[str, str]:
+    """
+    Get commit dates for multiple files in batch with multiple fallback methods.
+    """
+    commit_dates = {}
+    
+    # Method 1: Using iter_commits and stats (fastest)
+    try:
+        for commit in self.repo.iter_commits():
+            for rel_path in rel_paths:
+                if rel_path not in commit_dates:
+                    try:
+                        if rel_path in commit.stats.files:
+                            commit_dates[rel_path] = commit.committed_datetime.isoformat()
+                    except:
+                        continue
+    except:
+        pass
+
+    # Method 2: Try git log for files without commit dates
+    remaining_paths = [path for path in rel_paths if path not in commit_dates]
+    if remaining_paths:
+        for rel_path in remaining_paths:
+            try:
+                commits = list(self.repo.iter_commits(paths=rel_path, max_count=1))
+                if commits:
+                    commit_dates[rel_path] = commits[0].committed_datetime.isoformat()
+            except:
+                pass
+
+    # Method 3: Use git blame as last resort
+    remaining_paths = [path for path in rel_paths if path not in commit_dates]
+    if remaining_paths:
+        for rel_path in remaining_paths:
+            try:
+                full_path = os.path.join(self.repo_root, rel_path)
+                if os.path.exists(full_path):
+                    blame = self.repo.blame('HEAD', rel_path)
+                    if blame and blame[0]:
+                        commit = blame[0][0]
+                        commit_dates[rel_path] = commit.committed_datetime.isoformat()
+            except:
+                pass
+
+    return commit_dates
+
+def process_files_batch(self, file_paths: Optional[List[str]] = None) -> List[Dict]:
+    """Process all files with optimized batch processing."""
+    # Get all files if not provided
+    if file_paths is None:
+        file_paths = self.get_all_files()
+    
+    # Prepare basic file metadata first
+    metadata_dict = {}
+    rel_paths = []
+    
+    for file_path in file_paths:
+        try:
+            file_name = os.path.basename(file_path)
+            file_stats = os.stat(file_path)
+            rel_path = os.path.relpath(file_path, self.repo_root)
+            
+            metadata_dict[rel_path] = {
+                'file_name': file_name,
+                'file_path': os.path.abspath(file_path),
+                'file_size': format_file_size(file_stats.st_size),
+                'file_type': os.path.splitext(file_name)[1].lower().lstrip('.'),
+                'relative_path': rel_path,
+                'latest_commit_date': None
+            }
+            rel_paths.append(rel_path)
+        except:
+            continue
+
+    # Get commit dates using multiple methods
+    commit_dates = self._batch_get_commit_dates(rel_paths)
+    
+    # Update metadata with commit dates
+    for rel_path, commit_date in commit_dates.items():
+        if rel_path in metadata_dict:
+            metadata_dict[rel_path]['latest_commit_date'] = commit_date
+
+    return list(metadata_dict.values())
 
 """
 Example usage:
