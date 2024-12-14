@@ -1,4 +1,4 @@
-""
+"""
 Git Repository Manager using GitPython for easy repository management.
 Supports both regular and sparse checkouts with automated updates.
 """
