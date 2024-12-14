@@ -1,88 +1,89 @@
 import os
 import git
-from typing import Dict, List, Optional, Set
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import defaultdict
-import subprocess
+from typing import Dict, List, Optional
 from datetime import datetime
+from git.repo import Repo
+from git.exc import GitCommandError
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from multiprocessing import cpu_count
 
 class GitMetadataExtractor:
-    def __init__(self, repo_path: str, file_types: Optional[List[str]] = None):
+    def __init__(self, repo_path: str, file_types: Optional[List[str]] = None, max_workers: Optional[int] = None):
         """
         Initialize extractor with Git repository path and optional file type filter.
         
         Parameters:
         repo_path (str): Path to Git repository root
         file_types (List[str], optional): List of file extensions to process (without dots)
+        max_workers (int, optional): Maximum number of worker threads. Defaults to number of CPUs * 2
         """
-        self.repo = git.Repo(repo_path)
+        self.repo = Repo(repo_path)
         self.repo_root = repo_path
-        self.file_types = {ext.lstrip('.').lower() for ext in file_types} if file_types and len(file_types) > 0 else None
+        self.file_types = {ext.lstrip('.').lower() for ext in file_types} if file_types else None
+        self.max_workers = max_workers or cpu_count() * 2
         
-    def _batch_get_commit_dates(self, rel_paths: List[str], batch_size: int = 50) -> Dict[str, str]:
+    def _get_commit_date(self, rel_path: str) -> Optional[str]:
         """
-        Get commit dates for multiple files in batch using git command directly.
-        Uses batching and subprocess for better performance.
-        """
-        commit_dates = {}
+        Get the latest commit date for a single file using GitPython.
         
-        # Process files in batches to avoid command line length limitations
-        for i in range(0, len(rel_paths), batch_size):
-            batch = rel_paths[i:i + batch_size]
-            
-            try:
-                # Use git log with custom format and parallel processing
-                cmd = [
-                    'git', '-C', self.repo_root,
-                    'log', '--pretty=format:%H%x00%aI', '--name-only',
-                    '--first-parent', '--no-merges',
-                    '--', *batch
-                ]
-                
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                
-                # Parse the output efficiently
-                current_commit = None
-                current_date = None
-                
-                for line in result.stdout.split('\n'):
-                    if not line:
-                        continue
-                    if '\0' in line:  # This is a commit line
-                        commit_hash, date = line.split('\0')
-                        current_commit = commit_hash
-                        current_date = date
-                    else:  # This is a file path line
-                        # Only update if we haven't seen this file before
-                        if line not in commit_dates:
-                            commit_dates[line] = current_date
-                            
-            except subprocess.SubprocessError:
-                # Fall back to individual file processing if batch fails
-                for path in batch:
-                    try:
-                        cmd = [
-                            'git', '-C', self.repo_root,
-                            'log', '-1', '--format=%aI',
-                            '--', path
-                        ]
-                        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                        if result.stdout.strip():
-                            commit_dates[path] = result.stdout.strip()
-                    except:
-                        continue
-                        
-        return commit_dates
+        Parameters:
+        rel_path (str): Relative path of the file from repository root
+        
+        Returns:
+        Optional[str]: ISO formatted date string of the latest commit or None if not found
+        """
+        try:
+            # Use git log to get the latest commit for the file
+            commits = list(self.repo.iter_commits(paths=rel_path, max_count=1))
+            if commits:
+                return commits[0].committed_datetime.isoformat()
+        except GitCommandError:
+            pass
+        return None
 
-    def process_files_batch(self, file_paths: Optional[List[str]] = None) -> List[Dict]:
-        """Process all files with optimized batch processing."""
+    def _process_commit_dates(self, file_metadata_list: List[Dict]) -> None:
+        """
+        Process commit dates for multiple files in parallel using ThreadPoolExecutor.
+        
+        Parameters:
+        file_metadata_list (List[Dict]): List of file metadata dictionaries to update with commit dates
+        """
+        def process_single_file(metadata: Dict) -> Dict:
+            metadata['latest_commit_date'] = self._get_commit_date(metadata['relative_path'])
+            return metadata
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks and store futures
+            future_to_metadata = {
+                executor.submit(process_single_file, metadata): metadata 
+                for metadata in file_metadata_list
+            }
+
+            # Process completed futures as they finish
+            for future in as_completed(future_to_metadata):
+                metadata = future_to_metadata[future]
+                try:
+                    updated_metadata = future.result()
+                except Exception as e:
+                    print(f"Error processing {metadata['relative_path']}: {str(e)}")
+
+    def process_files(self, file_paths: Optional[List[str]] = None, include_commit_dates: bool = True) -> List[Dict]:
+        """
+        Process files with optional commit date extraction.
+        
+        Parameters:
+        file_paths (Optional[List[str]]): List of file paths to process. If None, processes all files
+        include_commit_dates (bool): Whether to extract commit dates for files
+        
+        Returns:
+        List[Dict]: List of dictionaries containing file metadata
+        """
         # Get all files if not provided
         if file_paths is None:
             file_paths = self.get_all_files()
         
-        # Prepare basic file metadata first
-        metadata_dict = {}
-        rel_paths = []
+        # Process basic metadata first
+        metadata_list = []
         
         for file_path in file_paths:
             try:
@@ -90,7 +91,7 @@ class GitMetadataExtractor:
                 file_stats = os.stat(file_path)
                 rel_path = os.path.relpath(file_path, self.repo_root)
                 
-                metadata_dict[rel_path] = {
+                metadata = {
                     'file_name': file_name,
                     'file_path': os.path.abspath(file_path),
                     'file_size': format_file_size(file_stats.st_size),
@@ -98,34 +99,51 @@ class GitMetadataExtractor:
                     'relative_path': rel_path,
                     'latest_commit_date': None
                 }
-                rel_paths.append(rel_path)
-            except:
+                metadata_list.append(metadata)
+            except (OSError, ValueError) as e:
                 continue
-
-        # Get commit dates in optimized batches
-        commit_dates = self._batch_get_commit_dates(rel_paths)
         
-        # Update metadata with commit dates
-        for rel_path, metadata in metadata_dict.items():
-            metadata['latest_commit_date'] = commit_dates.get(rel_path)
-
-        return list(metadata_dict.values())
+        # Process commit dates in parallel if needed
+        if include_commit_dates:
+            self._process_commit_dates(metadata_list)
+                
+        return metadata_list
 
     def get_all_files(self) -> List[str]:
-        """Get all valid files efficiently."""
+        """
+        Get all valid files in the repository.
+        
+        Returns:
+        List[str]: List of absolute file paths
+        """
         valid_files = []
         for root, _, files in os.walk(self.repo_root):
-            if '.git' in root:
+            # Skip .git directory
+            if '.git' in root.split(os.sep):
                 continue
+                
             for file in files:
                 if self.file_types is None or os.path.splitext(file)[1].lower().lstrip('.') in self.file_types:
                     valid_files.append(os.path.join(root, file))
+                    
         return valid_files
 
 def format_file_size(size_in_bytes: int) -> str:
-    """Format file size to human readable format"""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} PB"
+    """
+    Format file size to human readable format.
+    
+    Parameters:
+    size_in_bytes (int): File size in bytes
+    
+    Returns:
+    str: Formatted file size string with appropriate unit
+    """
+    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    size = float(size_in_bytes)
+    unit_index = 0
+    
+    while size >= 1024.0 and unit_index < len(units) - 1:
+        size /= 1024.0
+        unit_index += 1
+        
+    return f"{size:.2f} {units[unit_index]}"
