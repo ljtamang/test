@@ -1,3 +1,5 @@
+Complete Git Metadata Extractor with Improved Error Handling
+
 import os
 import git
 from typing import Dict, List, Optional, Set
@@ -58,15 +60,29 @@ class GitMetadataExtractor:
             }
             
             try:
-                commits = list(self.repo.iter_commits(paths=rel_path))
+                # Try to get commit history with more robust error handling
+                commits = []
+                try:
+                    # First try with regular iterator
+                    commits = list(self.repo.iter_commits(paths=rel_path))
+                except ValueError as ve:
+                    if "SHA b'tree'" in str(ve):
+                        # Try alternative method using git log
+                        commits = list(self.repo.iter_commits(paths=rel_path, max_count=1))
+                except Exception as e:
+                    # Log error but continue processing
+                    pass
+
                 if commits:
                     file_info['latest_commit_date'] = commits[0].committed_datetime.isoformat()
+                
+                return file_info
+                
             except Exception as git_error:
-                pass
-            
-            return file_info
-            
-        except Exception:
+                # If git operations fail, still return the file info without commit date
+                return file_info
+                
+        except Exception as e:
             return None
 
     def process_files_batch(self, file_paths: Optional[List[str]] = None) -> List[Dict]:
@@ -109,11 +125,20 @@ def save_metadata_to_json(metadata_list: List[Dict], output_file: str):
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(metadata_list, f, indent=2, ensure_ascii=False)
 
-# Example usage
-if __name__ == "__main__":
-    repo_path = "/path/to/repo"
-    file_types = ['md']
-    
-    extractor = GitMetadataExtractor(repo_path, file_types=file_types)
-    metadata = extractor.process_files_batch()
-    save_metadata_to_json(metadata, 'metadata_results.json')
+
+"""
+Example usage:
+
+# For Databricks /tmp directory:
+repo_path = "/tmp/va.team-gov"
+file_types = ['md']  # or ['.md'] - both work
+
+extractor = GitMetadataExtractor(repo_path, file_types=file_types)
+metadata = extractor.process_files_batch()
+
+# Save to DBFS for persistence
+save_metadata_to_json(metadata, '/dbfs/FileStore/metadata_results.json')
+
+# Or save to /tmp if temporary storage is fine
+save_metadata_to_json(metadata, '/tmp/metadata_results.json')
+"""
