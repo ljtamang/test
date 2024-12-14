@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import cpu_count
 
 class GitMetadataExtractor:
-    def __init__(self, repo_path: str, file_types: Optional[List[str]] = None, max_workers: Optional[int] = None):
+    def __init__(self, repo_path: str, file_types: Optional[List[str]] = None, max_workers: Optional[int] = None, trust_repo: bool = False):
         """
         Initialize extractor with Git repository path and optional file type filter.
         
@@ -16,15 +16,40 @@ class GitMetadataExtractor:
         repo_path (str): Path to Git repository root
         file_types (List[str], optional): List of file extensions to process (without dots)
         max_workers (int, optional): Maximum number of worker threads. Defaults to number of CPUs * 2
+        trust_repo (bool): If True, adds the repository to Git's safe directories
         """
-        self.repo = Repo(repo_path)
-        self.repo_root = repo_path
+        self.repo_root = os.path.abspath(repo_path)
+        
+        try:
+            self.repo = Repo(self.repo_root)
+        except git.exc.GitCommandError as e:
+            if "dubious ownership" in str(e).lower():
+                if trust_repo:
+                    # Add repository to safe directories
+                    with git.Git().custom_environment(GIT_CONFIG_GLOBAL='/dev/null'):
+                        git.Git().config("--global", "--add", "safe.directory", self.repo_root)
+                    # Try initializing repository again
+                    self.repo = Repo(self.repo_root)
+                else:
+                    raise git.exc.GitCommandError(
+                        "Repository has dubious ownership. "
+                        "To proceed, either:\n"
+                        "1. Pass trust_repo=True to automatically add to safe.directory\n"
+                        "2. Manually run: git config --global --add safe.directory '<path>'\n"
+                        "3. Fix the ownership of the repository\n"
+                        f"Repository path: {self.repo_root}",
+                        -1
+                    )
+            else:
+                raise
+        
         self.file_types = {ext.lstrip('.').lower() for ext in file_types} if file_types else None
         self.max_workers = max_workers or cpu_count() * 2
         
     def _get_commit_date(self, rel_path: str) -> Optional[str]:
         """
         Get the latest commit date for a single file using GitPython.
+        Handles special characters in file paths.
         
         Parameters:
         rel_path (str): Relative path of the file from repository root
@@ -33,11 +58,24 @@ class GitMetadataExtractor:
         Optional[str]: ISO formatted date string of the latest commit or None if not found
         """
         try:
-            # Use git log to get the latest commit for the file
-            commits = list(self.repo.iter_commits(paths=rel_path, max_count=1))
+            # Normalize path for Git (replace backslashes with forward slashes)
+            normalized_path = rel_path.replace(os.sep, '/')
+            
+            # Use -- to separate options from file paths
+            commits = list(self.repo.iter_commits(paths=[normalized_path], max_count=1))
             if commits:
                 return commits[0].committed_datetime.isoformat()
-        except GitCommandError:
+        except GitCommandError as e:
+            # Handle special characters in filename by using shell-quoted paths
+            try:
+                from shlex import quote
+                quoted_path = quote(normalized_path)
+                commits = list(self.repo.iter_commits(f'--all -- {quoted_path}', max_count=1))
+                if commits:
+                    return commits[0].committed_datetime.isoformat()
+            except (GitCommandError, Exception) as e2:
+                pass
+        except Exception:
             pass
         return None
 
@@ -67,13 +105,14 @@ class GitMetadataExtractor:
                 except Exception as e:
                     print(f"Error processing {metadata['relative_path']}: {str(e)}")
 
-    def process_files(self, file_paths: Optional[List[str]] = None, include_commit_dates: bool = True) -> List[Dict]:
+    def process_files(self, file_paths: Optional[List[str]] = None, include_commit_dates: bool = True, ignore_errors: bool = True) -> List[Dict]:
         """
         Process files with optional commit date extraction.
         
         Parameters:
         file_paths (Optional[List[str]]): List of file paths to process. If None, processes all files
         include_commit_dates (bool): Whether to extract commit dates for files
+        ignore_errors (bool): Whether to continue processing when encountering errors with individual files
         
         Returns:
         List[Dict]: List of dictionaries containing file metadata
@@ -148,9 +187,25 @@ def format_file_size(size_in_bytes: int) -> str:
         
     return f"{size:.2f} {units[unit_index]}"
 
-
-""""
-# Example 1: Basic usage with default settings
+# Example Usage
+if __name__ == "__main__":
+    # Example 1: Handling dubious ownership
+    try:
+        extractor = GitMetadataExtractor(
+            repo_path="path/to/repo",
+            file_types=["md"],
+            trust_repo=False  # Default safe behavior
+        )
+    except git.exc.GitCommandError as e:
+        if "dubious ownership" in str(e).lower():
+            print("Retrying with trust_repo=True")
+            extractor = GitMetadataExtractor(
+                repo_path="path/to/repo",
+                file_types=["md"],
+                trust_repo=True  # Automatically add to safe.directory
+            )
+    
+    # Example 2: Basic usage with default settings
     extractor = GitMetadataExtractor(
         repo_path="path/to/your/repo",
         file_types=["py", "js", "ts"]  # Only process Python and JavaScript/TypeScript files
@@ -204,4 +259,46 @@ def format_file_size(size_in_bytes: int) -> str:
         file_paths=[os.path.join("path/to/your/repo", f) for f in specific_files],
         include_commit_dates=True
     )
+    
+    print("\nExample 3: Processing specific files with custom thread count")
+    print("-" * 50)
+    for item in metadata:
+        print(f"File: {item['file_name']}")
+        print(f"Last Commit: {item['latest_commit_date']}")
+        print()
+
+# Sample Output:
+"""
+Example 1: Basic usage output
+--------------------------------------------------
+File: main.py
+Path: src/main.py
+Size: 1.25 KB
+Type: py
+Last Commit: 2024-12-14T10:30:45+00:00
+
+File: utils.js
+Path: src/utils/utils.js
+Size: 2.80 KB
+Type: js
+Last Commit: 2024-12-13T15:45:22+00:00
+
+Example 2: Fast metadata without commit dates
+--------------------------------------------------
+File: api.py
+Size: 3.45 KB
+
+File: models.py
+Size: 5.12 KB
+
+Example 3: Processing specific files with custom thread count
+--------------------------------------------------
+File: main.py
+Last Commit: 2024-12-14T10:30:45+00:00
+
+File: helpers.js
+Last Commit: 2024-12-12T09:15:33+00:00
+
+File: test_main.py
+Last Commit: 2024-12-13T16:20:11+00:00
 """
