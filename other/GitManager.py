@@ -67,6 +67,8 @@ class GitRepoManager:
         Raises:
             GitCommandError: If any git operation fails
         """
+        print(f"Starting repository update at: {target_path}")
+        print(f"Branch: {branch}")
         try:
             repo = Repo(target_path)
             origin = repo.remotes.origin
@@ -95,6 +97,7 @@ class GitRepoManager:
             # Pull with specific options for better reliability
             repo.git.pull('--ff-only', '--verbose')
             
+            print(f"Successfully updated repository at: {target_path}")
             return target_path
             
         except GitCommandError as e:
@@ -126,6 +129,11 @@ class GitRepoManager:
         Raises:
             GitCommandError: If clone operation fails
         """
+        clone_type = "sparse" if sparse else "regular"
+        print(f"Starting {clone_type} clone to: {target_path}")
+        print(f"Branch: {branch}")
+        if sparse:
+            print("Sparse paths:", ", ".join(sparse_paths))
         target_path.mkdir(parents=True, exist_ok=True)
         
         try:
@@ -158,6 +166,7 @@ class GitRepoManager:
             branch=branch,
             single_branch=True
         )
+        print(f"Successfully cloned repository to: {target_path}")
         return target_path
     
     def _sparse_clone(self, target_path: Path, branch: str, sparse_paths: List[str]) -> Path:
@@ -193,6 +202,7 @@ class GitRepoManager:
         repo.create_head(branch, origin.refs[branch])
         repo.heads[branch].checkout()
         
+        print(f"Successfully completed sparse clone to: {target_path}")
         return target_path
 
     def __repr__(self) -> str:
