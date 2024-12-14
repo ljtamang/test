@@ -147,3 +147,61 @@ def format_file_size(size_in_bytes: int) -> str:
         unit_index += 1
         
     return f"{size:.2f} {units[unit_index]}"
+
+
+""""
+# Example 1: Basic usage with default settings
+    extractor = GitMetadataExtractor(
+        repo_path="path/to/your/repo",
+        file_types=["py", "js", "ts"]  # Only process Python and JavaScript/TypeScript files
+    )
+    
+    # Get metadata including commit dates
+    metadata = extractor.process_files(include_commit_dates=True)
+    
+    # Print sample output
+    print("\nExample 1: Basic usage output")
+    print("-" * 50)
+    for item in metadata[:2]:  # Show first 2 files
+        print(f"File: {item['file_name']}")
+        print(f"Path: {item['relative_path']}")
+        print(f"Size: {item['file_size']}")
+        print(f"Type: {item['file_type']}")
+        print(f"Last Commit: {item['latest_commit_date']}")
+        print()
+
+    # Example 2: Fast metadata without commit dates
+    extractor = GitMetadataExtractor(
+        repo_path="path/to/your/repo",
+        file_types=["py"]  # Only Python files
+    )
+    
+    # Get metadata without commit dates for faster processing
+    fast_metadata = extractor.process_files(include_commit_dates=False)
+    
+    print("\nExample 2: Fast metadata without commit dates")
+    print("-" * 50)
+    for item in fast_metadata[:2]:  # Show first 2 files
+        print(f"File: {item['file_name']}")
+        print(f"Size: {item['file_size']}")
+        print()
+
+    # Example 3: Custom thread count for large repositories
+    extractor = GitMetadataExtractor(
+        repo_path="path/to/your/repo",
+        file_types=["py", "js", "ts", "jsx", "tsx"],
+        max_workers=8  # Use 8 threads for commit date extraction
+    )
+    
+    # Process specific files only
+    specific_files = [
+        "src/main.py",
+        "src/utils/helpers.js",
+        "tests/test_main.py"
+    ]
+    
+    metadata = extractor.process_files(
+        file_paths=[os.path.join("path/to/your/repo", f) for f in specific_files],
+        include_commit_dates=True
+    )
+"""
