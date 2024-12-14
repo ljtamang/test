@@ -1,210 +1,66 @@
-"""
-Git Repository Manager using GitPython for easy repository management.
-Supports both regular and sparse checkouts with automated updates.
-"""
-
-from typing import Optional, List
+from typing import List, Optional
+from pydantic import BaseModel, Field, validator
+import json
 from pathlib import Path
-from git import Repo, GitCommandError
-import os
 
 
-class GitRepoManager:
-    """Manages git repository cloning and updating operations using GitPython."""
-    
-    def __init__(self, repo_url: str):
-        """
-        Initialize GitRepoManager with a repository URL.
-        
-        Args:
-            repo_url (str): The URL of the git repository to clone
-        """
-        self.repo_url = repo_url
-    
-    def clone_or_update(self, 
-                       target_path: str,
-                       branch: str = 'main',
-                       sparse: bool = False,
-                       sparse_paths: Optional[List[str]] = None) -> Path:
-        """
-        Clone a git repository or update if it already exists.
-        
-        Args:
-            target_path (str): Path where the repository should be cloned/updated
-            branch (str, optional): Branch to checkout. Defaults to 'main'
-            sparse (bool, optional): Whether to perform sparse checkout. Defaults to False
-            sparse_paths (List[str], optional): List of paths to include in sparse checkout
-                                              Required if sparse=True
-        
-        Returns:
-            Path: Path object pointing to the repository
-        
-        Raises:
-            ValueError: If sparse is True but sparse_paths is None or empty
-            GitCommandError: If any git operation fails
-        """
-        target_path = Path(target_path).resolve()
-        
-        if sparse and not sparse_paths:
-            raise ValueError("sparse_paths must be provided when sparse=True")
-        
-        if target_path.exists() and (target_path / '.git').exists():
-            return self._update_repo(target_path, branch)
-        else:
-            return self._clone_repo(target_path, branch, sparse, sparse_paths)
+class BronzeConfig(BaseModel):
+    repo_url: str
+    target_path: str
+    branch: str = "main"  # Default value
+    target_file_types: Optional[List[str]] = None
+    sparse: bool = False
+    sparse_paths: Optional[List[str]] = None
+    data_storage_path: str
+    metadata_storage_path: str
 
-    def _update_repo(self, target_path: Path, branch: str) -> Path:
-        """
-        Update existing repository with improved error handling.
+    @validator("sparse_paths")
+    def validate_sparse_paths(cls, v, values):
+        sparse = values.get("sparse", False)
         
-        Args:
-            target_path (Path): Path to the existing repository
-            branch (str): Branch to update and checkout
-            
-        Returns:
-            Path: Path to the updated repository
-            
-        Raises:
-            GitCommandError: If any git operation fails
-        """
-        print(f"Starting repository update at: {target_path}")
-        print(f"Branch: {branch}")
-        try:
-            repo = Repo(target_path)
-            origin = repo.remotes.origin
-            
-            # Fetch latest changes
-            origin.fetch()
-            
-            # Store current branch
-            current = repo.active_branch
-            
-            # Reset any local changes
-            repo.git.reset('--hard')
-            repo.git.clean('-fd')
-            
-            # Check if branch exists locally
-            if branch in repo.heads:
-                local_branch = repo.heads[branch]
-            else:
-                # Create local branch tracking remote
-                local_branch = repo.create_head(branch, origin.refs[branch])
-            
-            # Set up tracking and checkout
-            local_branch.set_tracking_branch(origin.refs[branch])
-            local_branch.checkout()
-            
-            # Pull with specific options for better reliability
-            repo.git.pull('--ff-only', '--verbose')
-            
-            print(f"Successfully updated repository at: {target_path}")
-            return target_path
-            
-        except GitCommandError as e:
-            # Add more context to the error
-            raise GitCommandError(
-                f"Failed to update repository at {target_path}. "
-                f"Original error: {e.command}",
-                e.status,
-                e.stderr
-            )
-
-    def _clone_repo(self, 
-                    target_path: Path,
-                    branch: str,
-                    sparse: bool,
-                    sparse_paths: Optional[List[str]]) -> Path:
-        """
-        Clone repository (either sparse or regular).
+        # If sparse is False, sparse_paths should be None or empty
+        if not sparse and v:
+            raise ValueError("sparse_paths must be None or empty when sparse is False")
         
-        Args:
-            target_path (Path): Where to clone the repository
-            branch (str): Branch to clone
-            sparse (bool): Whether to perform sparse checkout
-            sparse_paths (Optional[List[str]]): Paths to include in sparse checkout
-            
-        Returns:
-            Path: Path to the cloned repository
-            
-        Raises:
-            GitCommandError: If clone operation fails
-        """
-        clone_type = "sparse" if sparse else "regular"
-        print(f"Starting {clone_type} clone to: {target_path}")
-        print(f"Branch: {branch}")
+        # If sparse is True, sparse_paths must exist and not be empty
         if sparse:
-            print("Sparse paths:", ", ".join(sparse_paths))
-        target_path.mkdir(parents=True, exist_ok=True)
+            if not v:
+                raise ValueError("sparse_paths cannot be empty when sparse is True")
         
-        try:
-            if sparse:
-                return self._sparse_clone(target_path, branch, sparse_paths)
-            else:
-                return self._regular_clone(target_path, branch)
-        except GitCommandError as e:
-            raise GitCommandError(
-                f"Failed to clone repository to {target_path}. "
-                f"Original error: {e.command}",
-                e.status,
-                e.stderr
-            )
-    
-    def _regular_clone(self, target_path: Path, branch: str) -> Path:
-        """
-        Perform a regular git clone.
-        
-        Args:
-            target_path (Path): Where to clone the repository
-            branch (str): Branch to clone
-            
-        Returns:
-            Path: Path to the cloned repository
-        """
-        Repo.clone_from(
-            self.repo_url,
-            str(target_path),
-            branch=branch,
-            single_branch=True
-        )
-        print(f"Successfully cloned repository to: {target_path}")
-        return target_path
-    
-    def _sparse_clone(self, target_path: Path, branch: str, sparse_paths: List[str]) -> Path:
-        """
-        Perform a sparse checkout.
-        
-        Args:
-            target_path (Path): Where to clone the repository
-            branch (str): Branch to clone
-            sparse_paths (List[str]): Paths to include in sparse checkout
-            
-        Returns:
-            Path: Path to the cloned repository
-        """
-        # Initialize repo
-        repo = Repo.init(target_path)
-        
-        # Add remote
-        origin = repo.create_remote('origin', self.repo_url)
-        
-        # Configure sparse checkout
-        config = repo.config_writer()
-        config.set_value('core', 'sparseCheckout', 'true')
-        config.release()
-        
-        # Write sparse-checkout patterns
-        sparse_file = target_path / '.git' / 'info' / 'sparse-checkout'
-        sparse_file.parent.mkdir(parents=True, exist_ok=True)
-        sparse_file.write_text('\n'.join(sparse_paths))
-        
-        # Fetch and checkout
-        origin.fetch(branch)
-        repo.create_head(branch, origin.refs[branch])
-        repo.heads[branch].checkout()
-        
-        print(f"Successfully completed sparse clone to: {target_path}")
-        return target_path
+        return v
 
-    def __repr__(self) -> str:
-        """String representation of the GitRepoManager."""
-        return f"GitRepoManager(repo_url='{self.repo_url}')"
+    @validator("repo_url")
+    def validate_repo_url(cls, v):
+        if not v.endswith(".git"):
+            raise ValueError("repo_url must end with .git")
+        return v
+
+
+class ConfigReader:
+    def __init__(self, config_path: str):
+        self.config_path = config_path
+        self.config = None
+
+    def read_config(self) -> BronzeConfig:
+        """
+        Read and validate the configuration file.
+        
+        Returns:
+            BronzeConfig: Validated configuration object
+            
+        Raises:
+            FileNotFoundError: If config file doesn't exist
+            JSONDecodeError: If config file is not valid JSON
+            ValidationError: If config doesn't meet the requirements
+        """
+        if not Path(self.config_path).exists():
+            raise FileNotFoundError(f"Config file not found: {self.config_path}")
+
+        with open(self.config_path, 'r') as f:
+            config_dict = json.load(f)
+
+        self.config = BronzeConfig(**config_dict)
+        return self.config
+
+
+##########
