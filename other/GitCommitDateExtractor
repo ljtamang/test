@@ -112,8 +112,9 @@ class GitCommitDateExtractor:
 
     # ... (rest of the methods remain the same)
 
+
 """
-# Example usage
+# Example usage, below, different scenario
 
 repo_path = "/dbfs/mnt/your-mount-point/your-repo"
 extractor = GitCommitDateExtractor(repo_path)
@@ -143,4 +144,5 @@ commit_dates = extractor.get_commit_dates_distributed(specific_files)
 # Print results
 for file_path, commit_date in commit_dates.items():
     print(f"{file_path}: {commit_date}")
+
 """
