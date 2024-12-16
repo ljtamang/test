@@ -1,0 +1,258 @@
+from typing import List, Dict, Tuple
+import os
+import shutil
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+from pyspark.sql import SparkSession
+from datetime import datetime
+import subprocess
+from pathlib import Path
+import tempfile
+import time
+import math
+import tarfile
+import io
+import base64
+
+class GitCommitDateExtractor:
+    def __init__(self, repo_path: str, temp_dir: str = "/tmp/git_repos"):
+        """
+        Initialize the extractor with repository path and temporary directory for worker copies
+        
+        Args:
+            repo_path: Path to the original git repository
+            temp_dir: Base directory for temporary worker copies
+        """
+        self.repo_path = repo_path
+        self.temp_dir = Path(temp_dir)
+        self.spark = SparkSession.builder.getOrCreate()
+        
+        # Ensure temp directory exists on driver
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Broadcast paths to all workers
+        self.broadcast_repo_path = self.spark.sparkContext.broadcast(str(repo_path))
+        self.broadcast_temp_dir = self.spark.sparkContext.broadcast(str(temp_dir))
+
+    def _create_repo_archive(self) -> str:
+        """
+        Create a compressed archive of the git repository
+        
+        Returns:
+            Base64 encoded compressed repository
+        """
+        print("Creating compressed repository archive...")
+        
+        # Create a temporary directory for the bare repo
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bare_path = Path(temp_dir) / "bare_repo"
+            
+            # Create bare repository (more efficient for transfer)
+            subprocess.run([
+                "git", "clone", "--mirror",
+                self.repo_path, str(bare_path)
+            ], check=True, capture_output=True)
+            
+            # Create tar.gz archive in memory
+            archive_buffer = io.BytesIO()
+            with tarfile.open(fileobj=archive_buffer, mode='w:gz', compresslevel=9) as tar:
+                tar.add(bare_path, arcname="repo")
+            
+            # Convert to base64 for efficient transfer
+            archive_data = base64.b64encode(archive_buffer.getvalue()).decode('utf-8')
+            print(f"Compressed archive size: {len(archive_data) / 1024 / 1024:.2f} MB")
+            return archive_data
+
+    def _efficient_worker_cleanup(self) -> None:
+        """
+        Efficiently clean up repositories on all worker nodes
+        """
+        def cleanup_worker(_):
+            worker_temp_dir = Path(self.broadcast_temp_dir.value)
+            
+            # Find all git repositories in temp directory
+            repo_dirs = list(worker_temp_dir.glob("worker_*"))
+            
+            for repo_dir in repo_dirs:
+                try:
+                    # Create a temporary directory for atomic move
+                    tmp_dir = Path(tempfile.mkdtemp(dir=worker_temp_dir))
+                    
+                    # Move existing directory to temp (faster than recursive delete)
+                    repo_dir.rename(tmp_dir / "to_delete")
+                    
+                    # Delete in background
+                    subprocess.Popen(
+                        ["rm", "-rf", str(tmp_dir)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                except Exception as e:
+                    # Fallback to synchronous delete
+                    print(f"Cleanup error for {repo_dir}: {e}")
+                    shutil.rmtree(repo_dir, ignore_errors=True)
+            
+            return True
+
+        # Execute cleanup on each executor
+        num_executors = len(self.spark.sparkContext._jsc.sc().statusTracker().getExecutorInfos()) - 1
+        cleanup_rdd = self.spark.sparkContext.parallelize(range(num_executors), num_executors)
+        cleanup_rdd.map(cleanup_worker).collect()
+
+    def _distribute_repo_to_workers(self) -> None:
+        """
+        Distribute compressed repository to all worker nodes in the cluster
+        """
+        # First, clean up any existing repositories
+        self._efficient_worker_cleanup()
+        
+        # Create and broadcast compressed repository
+        compressed_repo = self._create_repo_archive()
+        broadcast_repo = self.spark.sparkContext.broadcast(compressed_repo)
+        
+        def setup_worker_repo(_):
+            worker_temp_dir = Path(self.broadcast_temp_dir.value)
+            worker_temp_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create a unique directory for this worker
+            worker_dir = worker_temp_dir / f"worker_{time.time_ns()}"
+            worker_dir.mkdir(parents=True)
+            
+            # Decode and extract the repository
+            archive_data = base64.b64decode(broadcast_repo.value)
+            archive_buffer = io.BytesIO(archive_data)
+            
+            with tarfile.open(fileobj=archive_buffer, mode='r:gz') as tar:
+                tar.extractall(path=worker_dir)
+            
+            # Move the repository to its final location
+            extracted_repo = worker_dir / "repo"
+            if not extracted_repo.exists():
+                raise RuntimeError("Repository extraction failed")
+            
+            return True
+
+        # Create an RDD with one partition per executor
+        num_executors = len(self.spark.sparkContext._jsc.sc().statusTracker().getExecutorInfos()) - 1
+        dummy_rdd = self.spark.sparkContext.parallelize(range(num_executors), num_executors)
+        
+        # Execute repository setup on each executor
+        setup_success = dummy_rdd.map(setup_worker_repo).collect()
+        
+        if not all(setup_success):
+            raise RuntimeError("Failed to set up repository on all workers")
+        
+        # Unpersist the broadcast variable to free memory
+        broadcast_repo.unpersist()
+
+    def _get_file_commit_date_distributed(self, file_info: Tuple[int, str]) -> Tuple[str, datetime]:
+        """
+        Get commit date for a file in distributed mode
+        
+        Args:
+            file_info: Tuple of (partition_id, file_path)
+            
+        Returns:
+            Tuple of (file_path, commit_date)
+        """
+        partition_id, file_path = file_info
+        worker_temp_dir = Path(self.broadcast_temp_dir.value)
+        
+        # Find the repository in worker's temp directory
+        worker_repos = list(worker_temp_dir.glob("worker_*/repo"))
+        if not worker_repos:
+            raise RuntimeError(f"No repository found in {worker_temp_dir}")
+        
+        repo_path = str(worker_repos[0])
+        
+        cmd = [
+            "git",
+            "--git-dir", repo_path,
+            "log",
+            "-1",
+            "--format=%cd",
+            "--date=iso-strict",
+            "--",
+            file_path
+        ]
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            date_str = result.stdout.strip()
+            commit_date = datetime.fromisoformat(date_str) if date_str else None
+            return file_path, commit_date
+        except (subprocess.CalledProcessError, ValueError):
+            return file_path, None
+
+    def get_commit_dates_distributed(self, files: List[str], num_partitions: int = None) -> Dict[str, datetime]:
+        """
+        Get commit dates using distributed processing across cluster nodes
+        
+        Args:
+            files: List of files to process
+            num_partitions: Number of partitions for parallel processing
+            
+        Returns:
+            Dictionary mapping file paths to their latest commit dates
+        """
+        if num_partitions is None:
+            num_partitions = self.spark.sparkContext.defaultParallelism
+        
+        # First, distribute repository to all workers
+        self._distribute_repo_to_workers()
+        
+        # Create RDD with partition IDs
+        files_with_partition = [(i % num_partitions, f) for i, f in enumerate(files)]
+        files_rdd = self.spark.sparkContext.parallelize(files_with_partition, num_partitions)
+        
+        # Process files
+        results_rdd = files_rdd.map(self._get_file_commit_date_distributed)
+        
+        # Collect results
+        results = results_rdd.collect()
+        
+        # Clean up after processing
+        self._efficient_worker_cleanup()
+        
+        return {file_path: commit_date for file_path, commit_date in results if commit_date is not None}
+
+    def get_all_files(self) -> List[str]:
+        """
+        Get list of all files in the repository
+        
+        Returns:
+            List of relative file paths
+        """
+        cmd = ["git", "ls-files"]
+        output = subprocess.run(
+            cmd,
+            cwd=self.repo_path,
+            capture_output=True,
+            text=True,
+            check=True
+        ).stdout
+        return output.splitlines()
+
+# Example usage
+def main():
+    repo_path = "/dbfs/mnt/your-mount-point/your-repo"
+    extractor = GitCommitDateExtractor(repo_path)
+    
+    # Get all files
+    files = extractor.get_all_files()
+    print(f"Found {len(files)} files in repository")
+    
+    # Get commit dates using distributed processing
+    commit_dates = extractor.get_commit_dates_distributed(files)
+    
+    # Print results
+    for file_path, commit_date in commit_dates.items():
+        print(f"{file_path}: {commit_date}")
+
+if __name__ == "__main__":
+    main()
