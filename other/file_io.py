@@ -10,7 +10,10 @@ import json
 ##############
 # Save Metadata
 
-def save_metadata_to_json(metadata: list, filepath: str, pretty_format: bool = False) -> None:
+import json
+import os
+
+def save_metadata_to_json(metadata: list, filepath: str, pretty_format: bool = False, overwrite: bool = True) -> None:
     """
     Save a list of dictionaries as a JSON file.
     
@@ -18,16 +21,22 @@ def save_metadata_to_json(metadata: list, filepath: str, pretty_format: bool = F
         metadata (list): List of dictionaries containing metadata
         filepath (str): Path where the JSON file should be saved
         pretty_format (bool): If True, formats JSON with indentation for better readability
+        overwrite (bool): If False, raises an error when file exists. If True, overwrites existing file
     
     Returns:
         None
     
     Raises:
         TypeError: If metadata is not a list
+        FileExistsError: If file exists and overwrite is False
         IOError: If there's an error writing to the file
     """
     if not isinstance(metadata, list):
         raise TypeError("metadata must be a list of dictionaries")
+    
+    # Check if file exists and overwrite is False
+    if not overwrite and os.path.exists(filepath):
+        raise FileExistsError(f"File {filepath} already exists and overwrite is set to False")
     
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -38,19 +47,16 @@ def save_metadata_to_json(metadata: list, filepath: str, pretty_format: bool = F
     except IOError as e:
         raise IOError(f"Error writing to file {filepath}: {str(e)}")
 
-# Example usage
-"""
-metadata = [
-    {"id": 1, "name": "John", "age": 30},
-    {"id": 2, "name": "Jane", "age": 25}
-]
 
-# Save without pretty formatting
-save_metadata_to_json(metadata, "output.json")
-
-# Save with pretty formatting
-save_metadata_to_json(metadata, "output_pretty.json", pretty_format=True)
 """
+EXample Usage
+# This will raise FileExistsError if the file exists
+save_metadata_to_json(metadata, "output.json", overwrite=False)
+
+# This will overwrite any existing file
+save_metadata_to_json(metadata, "output.json", overwrite=True)
+"""
+
 ##########
 def get_optimal_workers(total_files: int) -> int:
     """
