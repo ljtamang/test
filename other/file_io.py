@@ -47,10 +47,7 @@ def save_as_json(data: List[Dict[Any, Any]], filepath: str, pretty_format: bool 
 
 """"
 # Save users data
-save_to_json(users, "users.json", pretty_format=True)
-
-# Save products data
-save_to_json(products, "products.json", pretty_format=True)
+# save_as_json(data, "output/data.json", pretty_format=True)
 """
 
 
