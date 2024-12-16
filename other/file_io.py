@@ -45,6 +45,41 @@ def get_optimal_workers(total_files: int) -> int:
     # Set reasonable bounds
     return max(2, min(optimal_workers, 32))  # Between 2 and 32 workers
 
+def delete_item(path: Path):
+    """Delete a single file or empty directory"""
+    try:
+        if path.is_file():
+            path.unlink()
+        elif path.is_dir() and not any(path.iterdir()):  # Only delete if empty
+            path.rmdir()
+    except Exception as e:
+        print(f"Error deleting {path}: {str(e)}")
+
+def parallel_delete(path: Path, max_workers: int = None):
+    """Delete directory contents in parallel"""
+    if not path.exists():
+        return
+
+    if path.is_file():
+        path.unlink()
+        return
+
+    # Collect all files and directories
+    all_paths = []
+    for root, dirs, files in os.walk(path, topdown=False):
+        root_path = Path(root)
+        # Add files first
+        all_paths.extend(root_path / file for file in files)
+        # Add directories
+        all_paths.extend(root_path / dir for dir in dirs)
+    # Add the root directory itself
+    all_paths.append(path)
+
+    # Use ThreadPoolExecutor for parallel deletion
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Delete files and empty directories in parallel
+        list(executor.map(delete_item, all_paths))
+
 def copy_files(
     source_path: str,
     destination_path: str,
@@ -68,12 +103,12 @@ def copy_files(
     source = Path(source_path)
     destination = Path(destination_path)
     
-    # Delete destination if it exists
+    # Delete destination if it exists using parallel deletion
     if destination.exists():
-        if destination.is_file():
-            destination.unlink()
-        else:
-            shutil.rmtree(destination)
+        print("Deleting existing destination...")
+        delete_start = time.time()
+        parallel_delete(destination, max_workers)
+        print(f"Deletion completed in {time.time() - delete_start:.2f} seconds")
     
     # Create destination directory
     destination.mkdir(parents=True, exist_ok=True)
@@ -155,9 +190,23 @@ def copy_files(
 
 # Example usage:
 if __name__ == "__main__":
-    # The function will automatically determine the optimal number of workers
+    # Example 1: Copy all files
     copy_files(
-        source_path="/tmp/your-files",
-        destination_path="/mnt/path/to/persistent/storage/your-files",
-        file_types=["md", "pdf"]
+        source_path="/tmp/source",
+        destination_path="/mnt/destination"
+    )
+    
+    # Example 2: Copy specific file types with excluded folders
+    copy_files(
+        source_path="/tmp/source",
+        destination_path="/mnt/destination",
+        file_types=["md", "pdf", "py"],  # will match .md, .pdf, .py files
+        exclude_folders=["venv", "node_modules"]
+    )
+    
+    # Example 3: Copy with manual worker specification
+    copy_files(
+        source_path="/tmp/source",
+        destination_path="/mnt/destination",
+        max_workers=8  # manually specify worker count
     )
