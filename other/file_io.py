@@ -3,26 +3,67 @@ import shutil
 import concurrent.futures
 from pathlib import Path
 from typing import List, Optional
+import psutil
+import time
+
+def get_optimal_workers(total_files: int) -> int:
+    """
+    Determine optimal number of workers based on system resources and workload.
+    
+    Args:
+        total_files (int): Total number of files to be copied
+        
+    Returns:
+        int: Recommended number of worker threads
+    """
+    # Get CPU and memory information
+    cpu_count = psutil.cpu_count(logical=False)  # Physical CPU cores
+    memory = psutil.virtual_memory()
+    
+    # Base calculations
+    # Use physical CPU count as a base
+    base_workers = cpu_count if cpu_count else 4  # Default to 4 if CPU count cannot be determined
+    
+    # Adjust based on memory availability
+    memory_factor = 1.0
+    if memory.percent > 80:  # High memory usage
+        memory_factor = 0.5
+    elif memory.percent < 40:  # Low memory usage
+        memory_factor = 1.5
+        
+    # Adjust based on number of files
+    if total_files < 100:
+        file_factor = 0.5
+    elif total_files > 1000:
+        file_factor = 1.5
+    else:
+        file_factor = 1.0
+        
+    # Calculate final worker count
+    optimal_workers = int(base_workers * memory_factor * file_factor)
+    
+    # Set reasonable bounds
+    return max(2, min(optimal_workers, 32))  # Between 2 and 32 workers
 
 def copy_files(
     source_path: str,
     destination_path: str,
     file_types: Optional[List[str]] = None,
     exclude_folders: Optional[List[str]] = None,
-    max_workers: int = None
+    max_workers: Optional[int] = None
 ) -> None:
     """
-    Copy files from source to destination with support for file type filtering and folder exclusion.
-    Uses multithreading for faster copying. If destination exists, it will be removed first.
+    Copy files from source to destination with automatic worker optimization.
     
     Args:
         source_path (str): Source directory path
         destination_path (str): Destination directory path
-        file_types (List[str], optional): List of file extensions to copy (e.g., ['md', 'pdf'])
-                                        Can be with or without dots
+        file_types (List[str], optional): List of file extensions to copy
         exclude_folders (List[str], optional): List of folder names to exclude
-        max_workers (int, optional): Maximum number of worker threads
+        max_workers (int, optional): Maximum number of worker threads. If None, automatically determined
     """
+    start_time = time.time()
+    
     # Convert paths to Path objects
     source = Path(source_path)
     destination = Path(destination_path)
@@ -63,20 +104,29 @@ def copy_files(
     
     # Collect all files to copy
     files_to_copy = []
+    total_size = 0
+    
     for root, dirs, files in os.walk(source):
         root_path = Path(root)
         
-        # Skip excluded folders if any are specified
         if exclude_folders:
             dirs[:] = [d for d in dirs if not is_excluded_folder(root_path / d)]
         
         for file in files:
             src_file = root_path / file
             if should_copy_file(src_file):
-                # Calculate relative path to maintain directory structure
+                total_size += src_file.stat().st_size
                 rel_path = src_file.relative_to(source)
                 dest_file = destination / rel_path
                 files_to_copy.append((src_file, dest_file))
+    
+    # Determine optimal number of workers if not specified
+    if max_workers is None:
+        max_workers = get_optimal_workers(len(files_to_copy))
+    
+    print(f"Starting copy operation with {max_workers} workers")
+    print(f"Total files to copy: {len(files_to_copy)}")
+    print(f"Total size: {total_size / (1024*1024):.2f} MB")
     
     # Use ThreadPoolExecutor for parallel copying
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -86,27 +136,28 @@ def copy_files(
         ]
         
         # Wait for all copying tasks to complete
-        concurrent.futures.wait(futures)
-        
-        # Check for any errors
-        for future in futures:
+        completed = 0
+        for future in concurrent.futures.as_completed(futures):
             try:
                 future.result()
+                completed += 1
+                if completed % 100 == 0:  # Progress update every 100 files
+                    print(f"Copied {completed}/{len(files_to_copy)} files...")
             except Exception as e:
                 print(f"Error during copy: {str(e)}")
+    
+    end_time = time.time()
+    duration = end_time - start_time
+    
+    print(f"\nCopy operation completed:")
+    print(f"Time taken: {duration:.2f} seconds")
+    print(f"Average speed: {(total_size / (1024*1024)) / duration:.2f} MB/s")
 
 # Example usage:
 if __name__ == "__main__":
-    # Copy all files (no filtering)
-    copy_files(
-        source_path="/tmp/your-files",
-        destination_path="/mnt/path/to/persistent/storage/your-files"
-    )
-    
-    # Copy only markdown and PDF files
+    # The function will automatically determine the optimal number of workers
     copy_files(
         source_path="/tmp/your-files",
         destination_path="/mnt/path/to/persistent/storage/your-files",
-        file_types=["md", ".pdf", "MD", ".MD"],  # handles various formats
-        exclude_folders=["node_modules", "venv"]  # optional folder exclusions
+        file_types=["md", "pdf"]
     )
