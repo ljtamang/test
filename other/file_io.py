@@ -13,12 +13,12 @@ import json
 import json
 import os
 
-def save_metadata_to_json(metadata: list, filepath: str, pretty_format: bool = False, overwrite: bool = True) -> None:
+def save_to_json(data: list, filepath: str, pretty_format: bool = False, overwrite: bool = True) -> None:
     """
-    Save a list of dictionaries as a JSON file.
+    Save a list of dictionaries to a JSON file.
     
     Args:
-        metadata (list): List of dictionaries containing metadata
+        data (list): List of dictionaries to save
         filepath (str): Path where the JSON file should be saved
         pretty_format (bool): If True, formats JSON with indentation for better readability
         overwrite (bool): If False, raises an error when file exists. If True, overwrites existing file
@@ -27,12 +27,12 @@ def save_metadata_to_json(metadata: list, filepath: str, pretty_format: bool = F
         None
     
     Raises:
-        TypeError: If metadata is not a list
+        TypeError: If data is not a list
         FileExistsError: If file exists and overwrite is False
         IOError: If there's an error writing to the file
     """
-    if not isinstance(metadata, list):
-        raise TypeError("metadata must be a list of dictionaries")
+    if not isinstance(data, list):
+        raise TypeError("data must be a list of dictionaries")
     
     # Check if file exists and overwrite is False
     if not overwrite and os.path.exists(filepath):
@@ -41,21 +41,21 @@ def save_metadata_to_json(metadata: list, filepath: str, pretty_format: bool = F
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
             if pretty_format:
-                json.dump(metadata, f, indent=4, ensure_ascii=False)
+                json.dump(data, f, indent=4, ensure_ascii=False)
             else:
-                json.dump(metadata, f, ensure_ascii=False)
+                json.dump(data, f, ensure_ascii=False)
     except IOError as e:
         raise IOError(f"Error writing to file {filepath}: {str(e)}")
 
+""""
+# Save users data
+save_to_json(users, "users.json", pretty_format=True)
 
+# Save products data
+save_to_json(products, "products.json", pretty_format=True)
 """
-EXample Usage
-# This will raise FileExistsError if the file exists
-save_metadata_to_json(metadata, "output.json", overwrite=False)
 
-# This will overwrite any existing file
-save_metadata_to_json(metadata, "output.json", overwrite=True)
-"""
+
 
 ##########
 def get_optimal_workers(total_files: int) -> int:
