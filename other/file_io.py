@@ -5,7 +5,53 @@ from pathlib import Path
 from typing import List, Optional
 import psutil
 import time
+import json
 
+##############
+# Save Metadata
+
+def save_metadata_to_json(metadata: list, filepath: str, pretty_format: bool = False) -> None:
+    """
+    Save a list of dictionaries as a JSON file.
+    
+    Args:
+        metadata (list): List of dictionaries containing metadata
+        filepath (str): Path where the JSON file should be saved
+        pretty_format (bool): If True, formats JSON with indentation for better readability
+    
+    Returns:
+        None
+    
+    Raises:
+        TypeError: If metadata is not a list
+        IOError: If there's an error writing to the file
+    """
+    if not isinstance(metadata, list):
+        raise TypeError("metadata must be a list of dictionaries")
+    
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            if pretty_format:
+                json.dump(metadata, f, indent=4, ensure_ascii=False)
+            else:
+                json.dump(metadata, f, ensure_ascii=False)
+    except IOError as e:
+        raise IOError(f"Error writing to file {filepath}: {str(e)}")
+
+# Example usage
+"""
+metadata = [
+    {"id": 1, "name": "John", "age": 30},
+    {"id": 2, "name": "Jane", "age": 25}
+]
+
+# Save without pretty formatting
+save_metadata_to_json(metadata, "output.json")
+
+# Save with pretty formatting
+save_metadata_to_json(metadata, "output_pretty.json", pretty_format=True)
+"""
+##########
 def get_optimal_workers(total_files: int) -> int:
     """
     Determine optimal number of workers based on system resources and workload.
