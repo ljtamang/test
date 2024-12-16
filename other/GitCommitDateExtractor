@@ -279,9 +279,10 @@ class GitCommitDateExtractor:
 repo_path = "/dbfs/mnt/your-mount-point/your-repo"
 extractor = GitCommitDateExtractor(repo_path)
 
-# Get all files
-files = extractor.get_all_files()
-print(f"Found {len(files)} files in repository")
+# Get only markdown and PDF files
+file_types = ['md', '.pdf']  # Works with or without dots
+files = extractor.get_all_files(file_types)
+print(f"Found {len(files)} files of types {file_types} in repository")
 
 # Get commit dates using distributed processing
 commit_dates = extractor.get_commit_dates_distributed(files)
