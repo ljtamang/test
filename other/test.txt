@@ -1,151 +1,24 @@
-import os
-import git
-from typing import Dict, List, Optional, Set
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import defaultdict
-
-class GitMetadataExtractor:
-    def __init__(self, repo_path: str, file_types: Optional[List[str]] = None):
-        """
-        Initialize extractor with Git repository path and optional file type filter.
-        
-        Parameters:
-        repo_path (str): Path to Git repository root
-        file_types (List[str], optional): List of file extensions to process (without dots)
-        """
-        self.repo = git.Repo(repo_path)
-        self.repo_root = repo_path
-        self.file_types = {ext.lstrip('.').lower() for ext in file_types} if file_types and len(file_types) > 0 else None
-        # Cache for commit dates
-        self._commit_cache = {}
-
-    def _batch_get_commit_dates(self, rel_paths: List[str]) -> Dict[str, str]:
-        """
-        Get commit dates for multiple files in batch.
-        Much faster than getting commits one by one.
-        """
-        commit_dates = {}
-        try:
-            # Get all commits for all files at once
-            for commit in self.repo.iter_commits():
-                # Check each file in this commit
-                for rel_path in rel_paths:
-                    if rel_path not in commit_dates:  # Only check if we haven't found the latest commit yet
-                        try:
-                            if rel_path in commit.stats.files:
-                                commit_dates[rel_path] = commit.committed_datetime.isoformat()
-                        except:
-                            continue
-        except:
-            pass
-        return commit_dates
-
-    def _get_latest_commit_date(self, rel_path: str) -> Optional[str]:
-        """
-        Alternative method to get the latest commit date for a single file.
-        Uses git log command directly.
-        """
-        try:
-            output = self.repo.git.log('-1', '--format=%cd', '--date=iso', rel_path)
-            return output.strip()
-        except:
-            return None
-
-    def get_all_files(self) -> List[str]:
-        """Get all valid files efficiently."""
-        valid_files = []
-        for root, _, files in os.walk(self.repo_root):
-            if '.git' in root:
-                continue
-            for file in files:
-                if self.file_types is None or os.path.splitext(file)[1].lower().lstrip('.') in self.file_types:
-                    valid_files.append(os.path.join(root, file))
-        return valid_files
-
-    def process_files_batch(self, file_paths: Optional[List[str]] = None) -> List[Dict]:
-        """Process all files with optimized batch processing."""
-        # Get all files if not provided
-        if file_paths is None:
-            file_paths = self.get_all_files()
-        
-        # Prepare basic file metadata first
-        metadata_dict = {}
-        rel_paths = []
-        
-        for file_path in file_paths:
-            try:
-                file_name = os.path.basename(file_path)
-                file_stats = os.stat(file_path)
-                rel_path = os.path.relpath(file_path, self.repo_root)
-                
-                metadata_dict[rel_path] = {
-                    'file_name': file_name,
-                    'file_path': os.path.abspath(file_path),
-                    'file_size': format_file_size(file_stats.st_size),
-                    'file_type': os.path.splitext(file_name)[1].lower().lstrip('.'),
-                    'relative_path': rel_path,
-                    'latest_commit_date': None
-                }
-                rel_paths.append(rel_path)
-            except:
-                continue
-
-        # Batch get commit dates
-        commit_dates = self._batch_get_commit_dates(rel_paths)
-        
-        # Update metadata with commit dates, using alternative method if needed
-        for rel_path in rel_paths:
-            if rel_path in commit_dates:
-                metadata_dict[rel_path]['latest_commit_date'] = commit_dates[rel_path]
-            else:
-                alt_commit_date = self._get_latest_commit_date(rel_path)
-                if alt_commit_date:
-                    metadata_dict[rel_path]['latest_commit_date'] = alt_commit_date
-
-        # Convert to list
-        return list(metadata_dict.values())
-
-def format_file_size(size_in_bytes: int) -> str:
-    """Format file size to human readable format"""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} PB"
-
-def save_metadata_to_json(metadata_list: List[Dict], output_file: str):
-    """Save metadata to JSON file"""
-    import json
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(metadata_list, f, indent=2, ensure_ascii=False)
-
-def format_file_size(size_in_bytes: int) -> str:
-    """Format file size to human readable format"""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if size_in_bytes < 1024.0:
-            return f"{size_in_bytes:.2f} {unit}"
-        size_in_bytes /= 1024.0
-    return f"{size_in_bytes:.2f} PB"
-
-def save_metadata_to_json(metadata_list: List[Dict], output_file: str):
-    """Save metadata to JSON file"""
-    import json
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(metadata_list, f, indent=2, ensure_ascii=False)
-
-"""
-Example usage:
-
-# For Databricks /tmp directory:
-repo_path = "/tmp/va.team-gov"
-file_types = ['md']  # or ['.md'] - both work
-
-extractor = GitMetadataExtractor(repo_path, file_types=file_types)
-metadata = extractor.process_files_batch()
-
-# Save to DBFS for persistence
-save_metadata_to_json(metadata, '/dbfs/FileStore/metadata_results.json')
-
-# Or save to /tmp if temporary storage is fine
-save_metadata_to_json(metadata, '/tmp/metadata_results.json')
-"""
+github_etl/
+│
+├── notebooks/
+│   ├── bronze_github_ingestion.py        # Raw data ingestion from GitHub
+│   ├── silver_file_selection.py          # Business rules and file selection
+│   └── gold_search_prep.py              # Azure Search preparation
+│
+├── utils/
+│   ├── __init__.py
+│   ├── git_helper.py                    # GitHub API interactions & git operations
+│   ├── file_helper.py                   # File operations, pattern matching
+│   ├── delta_helper.py                  # Delta Lake operations
+│   ├── search_helper.py                 # Azure Search operations
+│   └── spark_helper.py                  # Spark operations and utilities
+│
+├── config/
+│   └── pipeline_config.py               # Configuration parameters
+│
+├── tests/
+│   ├── test_git_helper.py
+│   ├── test_file_helper.py
+│   └── test_delta_helper.py
+│
+└── README.md
