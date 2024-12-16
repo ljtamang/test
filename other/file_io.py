@@ -9,34 +9,32 @@ import json
 
 ##############
 # Save Metadata
-
-import json
-import os
-
-def save_to_json(data: list, filepath: str, pretty_format: bool = False, overwrite: bool = True) -> None:
+def save_as_json(data: List[Dict[Any, Any]], filepath: str, pretty_format: bool = False, overwrite: bool = True) -> None:
     """
-    Save a list of dictionaries to a JSON file.
-    
+    Save list of dictionaries as JSON file with options for formatting and overwriting.
+    Creates necessary directories if they don't exist.
+
     Args:
-        data (list): List of dictionaries to save
-        filepath (str): Path where the JSON file should be saved
-        pretty_format (bool): If True, formats JSON with indentation for better readability
-        overwrite (bool): If False, raises an error when file exists. If True, overwrites existing file
-    
-    Returns:
-        None
-    
+        data: List of dictionaries to save
+        filepath: Path where to save the JSON file
+        pretty_format: Whether to format JSON with indentation (default: False)
+        overwrite: Whether to overwrite existing file (default: True)
+
     Raises:
-        TypeError: If data is not a list
-        FileExistsError: If file exists and overwrite is False
-        IOError: If there's an error writing to the file
+        TypeError: If input is not a list of dictionaries
+        FileExistsError: If file exists and overwrite=False
+        IOError: If error occurs while writing file
     """
+    # Validate input type
     if not isinstance(data, list):
-        raise TypeError("data must be a list of dictionaries")
+        raise TypeError("Input data must be a list of dictionaries")
     
-    # Check if file exists and overwrite is False
+    # Create directories if they don't exist
+    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+    
+    # Check for existing file when overwrite is False
     if not overwrite and os.path.exists(filepath):
-        raise FileExistsError(f"File {filepath} already exists and overwrite is set to False")
+        raise FileExistsError(f"File already exists at {filepath} and overwrite=False")
     
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -45,7 +43,7 @@ def save_to_json(data: list, filepath: str, pretty_format: bool = False, overwri
             else:
                 json.dump(data, f, ensure_ascii=False)
     except IOError as e:
-        raise IOError(f"Error writing to file {filepath}: {str(e)}")
+        raise IOError(f"Failed to write to {filepath}: {str(e)}")
 
 """"
 # Save users data
