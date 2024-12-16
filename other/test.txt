@@ -1,38 +1,44 @@
-# Project Structure
+# GitHub ETL Pipeline
 
-    github_etl/
-    |-- notebooks/
-        |-- bronze_github_ingestion.py    # Raw data ingestion from GitHub
-        |-- silver_file_selection.py      # Business rules and file selection
-        |-- gold_search_prep.py          # Azure Search preparation
-    
-    |-- utils/
-        |-- __init__.py
-        |-- git_helper.py                # GitHub API interactions & git operations
-        |-- file_helper.py               # File operations, pattern matching
-        |-- delta_helper.py              # Delta Lake operations
-        |-- search_helper.py             # Azure Search operations
-        |-- spark_helper.py              # Spark operations and utilities
-    
-    |-- config/
-        |-- pipeline_config.py           # Configuration parameters
-    
-    |-- tests/
-        |-- test_git_helper.py
-        |-- test_file_helper.py
-        |-- test_delta_helper.py
-    
-    |-- README.md
+This project implements a data pipeline for processing GitHub repositories through bronze, silver, and gold layers for Azure Search ingestion.
 
-# Directory Description
+## Project Structure
 
-## notebooks/
+```text
+github_etl/
+|-- notebooks/
+    |-- bronze_github_ingestion.py    # Raw data ingestion from GitHub
+    |-- silver_file_selection.py      # Business rules and file selection
+    |-- gold_search_prep.py          # Azure Search preparation
+
+|-- utils/
+    |-- __init__.py
+    |-- git_helper.py                # GitHub API interactions & git operations
+    |-- file_helper.py               # File operations, pattern matching
+    |-- delta_helper.py              # Delta Lake operations
+    |-- search_helper.py             # Azure Search operations
+    |-- spark_helper.py              # Spark operations and utilities
+
+|-- config/
+    |-- pipeline_config.py           # Configuration parameters
+
+|-- tests/
+    |-- test_git_helper.py
+    |-- test_file_helper.py
+    |-- test_delta_helper.py
+
+|-- README.md
+```
+
+## Directory Description
+
+### notebooks/
 Main pipeline notebooks for each layer of data processing:
 * bronze_github_ingestion.py: Handles raw data ingestion from GitHub repositories
 * silver_file_selection.py: Implements business rules for file selection
 * gold_search_prep.py: Prepares data for Azure Search ingestion
 
-## utils/
+### utils/
 Helper modules for different functionalities:
 * git_helper.py: GitHub API interactions and git operations
 * file_helper.py: File operations and pattern matching utilities
@@ -40,12 +46,38 @@ Helper modules for different functionalities:
 * search_helper.py: Azure Search related operations
 * spark_helper.py: Spark optimization and utilities
 
-## config/
+### config/
 Configuration files:
 * pipeline_config.py: Contains pipeline parameters and settings
 
-## tests/
+### tests/
 Unit tests for utility modules:
 * test_git_helper.py: Tests for GitHub operations
 * test_file_helper.py: Tests for file operations
 * test_delta_helper.py: Tests for Delta Lake operations
+
+## Pipeline Overview
+
+1. **Bronze Layer** (Raw Data)
+   - Ingests raw data from GitHub repositories
+   - Extracts file metadata and content
+   - Stores in Delta format
+
+2. **Silver Layer** (Refined Data)
+   - Applies business rules for file selection
+   - Resolves latest versions of files
+   - Maintains clean, filtered dataset
+
+3. **Gold Layer** (Presentation Data)
+   - Prepares data for Azure Search
+   - Optimizes format for search indexing
+   - Ensures data quality for end-users
+
+## Getting Started
+
+1. Configure GitHub access in config/pipeline_config.py
+2. Run notebooks in sequence:
+   - bronze_github_ingestion
+   - silver_file_selection
+   - gold_search_prep
+3. Monitor execution in Databricks workflow
