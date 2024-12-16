@@ -221,10 +221,30 @@ class GitCommitDateExtractor:
         
         return {file_path: commit_date for file_path, commit_date in results if commit_date is not None}
 
-    def get_all_files(self) -> List[str]:
+    def _normalize_extensions(self, extensions: List[str]) -> List[str]:
         """
-        Get list of all files in the repository
+        Normalize file extensions for consistent comparison
         
+        Args:
+            extensions: List of file extensions (with or without dots)
+            
+        Returns:
+            List of normalized extensions (lowercase, with dots)
+        """
+        normalized = []
+        for ext in extensions:
+            # Remove leading dot if present and convert to lowercase
+            ext = ext.lower().lstrip('.')
+            normalized.append(f'.{ext}')
+        return normalized
+
+    def get_all_files(self, file_types: List[str] = None) -> List[str]:
+        """
+        Get list of all files in the repository, optionally filtered by file types
+        
+        Args:
+            file_types: Optional list of file extensions to filter by (e.g., ['md', 'pdf', '.txt'])
+            
         Returns:
             List of relative file paths
         """
@@ -236,23 +256,37 @@ class GitCommitDateExtractor:
             text=True,
             check=True
         ).stdout
-        return output.splitlines()
+        
+        all_files = output.splitlines()
+        
+        if not file_types:
+            return all_files
+            
+        # Normalize the provided extensions
+        normalized_extensions = self._normalize_extensions(file_types)
+        
+        # Filter files by extension
+        filtered_files = [
+            f for f in all_files 
+            if Path(f).suffix.lower() in normalized_extensions
+        ]
+        
+        return filtered_files
 
+"""
 # Example usage
-def main():
-    repo_path = "/dbfs/mnt/your-mount-point/your-repo"
-    extractor = GitCommitDateExtractor(repo_path)
-    
-    # Get all files
-    files = extractor.get_all_files()
-    print(f"Found {len(files)} files in repository")
-    
-    # Get commit dates using distributed processing
-    commit_dates = extractor.get_commit_dates_distributed(files)
-    
-    # Print results
-    for file_path, commit_date in commit_dates.items():
-        print(f"{file_path}: {commit_date}")
 
-if __name__ == "__main__":
-    main()
+repo_path = "/dbfs/mnt/your-mount-point/your-repo"
+extractor = GitCommitDateExtractor(repo_path)
+
+# Get all files
+files = extractor.get_all_files()
+print(f"Found {len(files)} files in repository")
+
+# Get commit dates using distributed processing
+commit_dates = extractor.get_commit_dates_distributed(files)
+
+# Print results
+for file_path, commit_date in commit_dates.items():
+    print(f"{file_path}: {commit_date}")
+"""
