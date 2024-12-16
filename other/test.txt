@@ -1,24 +1,51 @@
-github_etl/
-│
-├── notebooks/
-│   ├── bronze_github_ingestion.py        # Raw data ingestion from GitHub
-│   ├── silver_file_selection.py          # Business rules and file selection
-│   └── gold_search_prep.py              # Azure Search preparation
-│
-├── utils/
-│   ├── __init__.py
-│   ├── git_helper.py                    # GitHub API interactions & git operations
-│   ├── file_helper.py                   # File operations, pattern matching
-│   ├── delta_helper.py                  # Delta Lake operations
-│   ├── search_helper.py                 # Azure Search operations
-│   └── spark_helper.py                  # Spark operations and utilities
-│
-├── config/
-│   └── pipeline_config.py               # Configuration parameters
-│
-├── tests/
-│   ├── test_git_helper.py
-│   ├── test_file_helper.py
-│   └── test_delta_helper.py
-│
-└── README.md
+# Project Structure
+
+    github_etl/
+    |-- notebooks/
+        |-- bronze_github_ingestion.py    # Raw data ingestion from GitHub
+        |-- silver_file_selection.py      # Business rules and file selection
+        |-- gold_search_prep.py          # Azure Search preparation
+    
+    |-- utils/
+        |-- __init__.py
+        |-- git_helper.py                # GitHub API interactions & git operations
+        |-- file_helper.py               # File operations, pattern matching
+        |-- delta_helper.py              # Delta Lake operations
+        |-- search_helper.py             # Azure Search operations
+        |-- spark_helper.py              # Spark operations and utilities
+    
+    |-- config/
+        |-- pipeline_config.py           # Configuration parameters
+    
+    |-- tests/
+        |-- test_git_helper.py
+        |-- test_file_helper.py
+        |-- test_delta_helper.py
+    
+    |-- README.md
+
+# Directory Description
+
+## notebooks/
+Main pipeline notebooks for each layer of data processing:
+* bronze_github_ingestion.py: Handles raw data ingestion from GitHub repositories
+* silver_file_selection.py: Implements business rules for file selection
+* gold_search_prep.py: Prepares data for Azure Search ingestion
+
+## utils/
+Helper modules for different functionalities:
+* git_helper.py: GitHub API interactions and git operations
+* file_helper.py: File operations and pattern matching utilities
+* delta_helper.py: Delta Lake operations and utilities
+* search_helper.py: Azure Search related operations
+* spark_helper.py: Spark optimization and utilities
+
+## config/
+Configuration files:
+* pipeline_config.py: Contains pipeline parameters and settings
+
+## tests/
+Unit tests for utility modules:
+* test_git_helper.py: Tests for GitHub operations
+* test_file_helper.py: Tests for file operations
+* test_delta_helper.py: Tests for Delta Lake operations
