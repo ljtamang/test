@@ -32,7 +32,8 @@ def get_git_log(repo_path: str, file_path: str):
         content_change_command = [
             "git", "log", "-1", "--pretty=format:%ad", "--date=iso", "-c", "--", relative_file
         ]
-        result["last_content_change_date"] = subprocess.check_output(content_change_command, cwd=repo_path, stderr=subprocess.DEVNULL).decode().strip()
+        content_change_date = subprocess.check_output(content_change_command, cwd=repo_path, stderr=subprocess.DEVNULL).decode().splitlines()
+        result["last_content_change_date"] = content_change_date[0] if content_change_date else "N/A"
 
     except subprocess.CalledProcessError:
         print(f"Error processing file: {file_path}")
@@ -57,4 +58,5 @@ def get_git_metadata(repo_path: str, file_list: list):
             "last_content_change_date": metadata["last_content_change_date"],
         })
     return results
+
 
