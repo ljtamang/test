@@ -21,7 +21,8 @@ def get_git_log_batch(repo_path: str, file_list: list):
         # Single git log command to process all files at once
         git_command = [
             "git", "log", "--pretty=format:%H %ad", "--date=iso", "--name-status", "--follow", "--diff-filter=ACDMR"
-        ] + relative_files
+        ]
+        git_command.extend(relative_files)
 
         # Run the git log command and decode output
         output = subprocess.check_output(git_command, cwd=repo_path, stderr=subprocess.DEVNULL).decode()
@@ -36,15 +37,18 @@ def get_git_log_batch(repo_path: str, file_list: list):
         for line in output.splitlines():
             if line and not line.startswith(("A", "D", "M", "R")):  # Commit hash and date
                 parts = line.split(" ", 1)
-                current_commit, current_date = parts[0], parts[1]
+                if len(parts) == 2:
+                    current_commit, current_date = parts[0], parts[1]
             elif line.startswith(("A", "C", "M", "R")):  # File changes
-                status, file_path = line.split("\t", 1)
-                if file_path in relative_files:
-                    if status == "A":  # File added - Creation Date
-                        file_creation_commits[file_path].append(current_date)
-                    # Update last commit and content change dates
-                    file_last_commit_data[file_path]["last_commit_date"] = current_date
-                    file_last_commit_data[file_path]["last_content_change_date"] = current_date
+                parts = line.split("\t", 1)
+                if len(parts) == 2:
+                    status, file_path = parts
+                    if file_path in relative_files:
+                        if status == "A":  # File added - Creation Date
+                            file_creation_commits[file_path].append(current_date)
+                        # Update last commit and content change dates
+                        file_last_commit_data[file_path]["last_commit_date"] = current_date
+                        file_last_commit_data[file_path]["last_content_change_date"] = current_date
 
         # Populate the final result
         for file in relative_files:
