@@ -20,7 +20,7 @@ def get_git_log_batch(repo_path: str, file_list: list):
 
         # Single git log command to process all files at once
         git_command = [
-            "git", "log", "--pretty=format:%H %ad", "--name-status", "--date=iso", "--follow", "--diff-filter=ACDMR"
+            "git", "log", "--pretty=format:%H %ad", "--date=iso", "--name-status", "--follow", "--diff-filter=ACDMR"
         ] + relative_files
 
         # Run the git log command and decode output
@@ -89,27 +89,3 @@ def get_git_metadata(repo_path: str, file_list: list):
         })
     return results
 
-"""
-EXAMPLE USAGE
-
-# Example usage for direct execution
-REPO_PATH = "/path/to/your/repo"
-FILE_LIST = [
-    "/path/to/your/repo/src/file1.py",
-    "/path/to/your/repo/src/file2.js",
-    "/path/to/your/repo/docs/readme.md",
-    # Add more file paths as needed
-]
-
-try:
-    metadata = get_git_metadata(REPO_PATH, FILE_LIST)
-    for item in metadata:
-        print(f"File: {item['file_path']}")
-        print(f"  Creation Date: {item['creation_date']}")
-        print(f"  Last Commit Date: {item['last_commit_date']}")
-        print(f"  Last Content Change Date: {item['last_content_change_date']}")
-        print("-" * 40)
-except ValueError as e:
-    print(e)
-
-"""
