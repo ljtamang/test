@@ -2,94 +2,59 @@ import os
 import subprocess
 from collections import defaultdict
 
-def get_git_log_batch(repo_path: str, file_list: list):
+def get_git_log(repo_path: str, file_path: str):
     """
-    Batch processing: Fetch creation date, last commit date, and last content change date
-    for all files in a single git log command.
+    Fetch creation date, last commit date, and last content change date for a single file.
     """
-    # Results initialized with default values
-    result = defaultdict(lambda: {
-        "creation_date": None, 
-        "last_commit_date": None, 
-        "last_content_change_date": None
-    })
-    
+    result = {
+        "creation_date": None,
+        "last_commit_date": None,
+        "last_content_change_date": None,
+    }
     try:
-        # Convert file paths to relative paths
-        relative_files = [os.path.relpath(file, repo_path) for file in file_list]
+        # Convert file path to relative path
+        relative_file = os.path.relpath(file_path, repo_path)
 
-        # Single git log command to process all files at once
-        git_command = [
-            "git", "log", "--pretty=format:%H %ad", "--date=iso", "--name-status", "--follow", "--diff-filter=ACDMR"
+        # Fetch creation date (first commit where the file was added)
+        creation_command = [
+            "git", "log", "--pretty=format:%ad", "--date=iso", "--follow", "--diff-filter=A", "--", relative_file
         ]
-        git_command.extend(relative_files)
+        creation_date = subprocess.check_output(creation_command, cwd=repo_path, stderr=subprocess.DEVNULL).decode().splitlines()
+        result["creation_date"] = creation_date[-1] if creation_date else "N/A"
 
-        # Run the git log command and decode output
-        output = subprocess.check_output(git_command, cwd=repo_path, stderr=subprocess.DEVNULL).decode()
+        # Fetch last commit date (most recent commit where the file was changed)
+        last_commit_command = [
+            "git", "log", "-1", "--pretty=format:%ad", "--date=iso", "--", relative_file
+        ]
+        result["last_commit_date"] = subprocess.check_output(last_commit_command, cwd=repo_path, stderr=subprocess.DEVNULL).decode().strip()
 
-        current_commit = None
-        current_date = None
+        # Fetch last content change date (most recent commit affecting content)
+        content_change_command = [
+            "git", "log", "-1", "--pretty=format:%ad", "--date=iso", "-c", "--", relative_file
+        ]
+        result["last_content_change_date"] = subprocess.check_output(content_change_command, cwd=repo_path, stderr=subprocess.DEVNULL).decode().strip()
 
-        file_creation_commits = defaultdict(list)  # Tracks first commit date for each file
-        file_last_commit_data = defaultdict(lambda: {"last_commit_date": None, "last_content_change_date": None})
-
-        # Parse git log output
-        for line in output.splitlines():
-            if line and not line.startswith(("A", "D", "M", "R")):  # Commit hash and date
-                parts = line.split(" ", 1)
-                if len(parts) == 2:
-                    current_commit, current_date = parts[0], parts[1]
-            elif line.startswith(("A", "C", "M", "R")):  # File changes
-                parts = line.split("\t", 1)
-                if len(parts) == 2:
-                    status, file_path = parts
-                    if file_path in relative_files:
-                        if status == "A":  # File added - Creation Date
-                            file_creation_commits[file_path].append(current_date)
-                        # Update last commit and content change dates
-                        file_last_commit_data[file_path]["last_commit_date"] = current_date
-                        file_last_commit_data[file_path]["last_content_change_date"] = current_date
-
-        # Populate the final result
-        for file in relative_files:
-            result[file]["creation_date"] = file_creation_commits[file][-1] if file_creation_commits[file] else "N/A"
-            result[file]["last_commit_date"] = file_last_commit_data[file]["last_commit_date"] or "N/A"
-            result[file]["last_content_change_date"] = file_last_commit_data[file]["last_content_change_date"] or "N/A"
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error running git log: {e}")
+    except subprocess.CalledProcessError:
+        print(f"Error processing file: {file_path}")
     return result
 
 def get_git_metadata(repo_path: str, file_list: list):
     """
-    API function to fetch Git metadata (creation date, last commit date, and last content change date)
-    for a list of files in a repository.
-
-    Args:
-        repo_path (str): Path to the Git repository.
-        file_list (list): List of absolute file paths to process.
-
-    Returns:
-        list: A list of dictionaries containing metadata for each file.
+    Fetch Git metadata for each file in the list.
     """
     if not os.path.isdir(repo_path):
         raise ValueError("Invalid Git repository path.")
 
     print(f"Fetching Git metadata for {len(file_list)} files...")
 
-    # Fetch metadata in batch
-    metadata = get_git_log_batch(repo_path, file_list)
-
-    # Construct final result list
     results = []
-    for file in file_list:
-        rel_file = os.path.relpath(file, repo_path)
-        file_data = metadata[rel_file]
+    for file_path in file_list:
+        metadata = get_git_log(repo_path, file_path)
         results.append({
-            "file_path": file,
-            "creation_date": file_data["creation_date"],
-            "last_commit_date": file_data["last_commit_date"],
-            "last_content_change_date": file_data["last_content_change_date"]
+            "file_path": file_path,
+            "creation_date": metadata["creation_date"],
+            "last_commit_date": metadata["last_commit_date"],
+            "last_content_change_date": metadata["last_content_change_date"],
         })
     return results
 
