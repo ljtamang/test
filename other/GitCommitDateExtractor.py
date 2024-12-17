@@ -67,6 +67,12 @@ class GitCommitDateExtractor:
         # Initialize cache
         self._init_cache()
 
+    def _normalize_extensions(self, extensions: Optional[List[str]]) -> Optional[List[str]]:
+        """Normalize file extensions"""
+        if extensions is None:
+            return None
+        return [f'.{ext.lower().lstrip(".")}' for ext in extensions]
+
     def _init_cache(self):
         """Initialize the cache system"""
         self.cache_file = self.CACHE_DIR / f"repo_{self._get_repo_hash()}.json"
@@ -97,6 +103,30 @@ class GitCommitDateExtractor:
         """Save the cache to disk"""
         with open(self.cache_file, 'w') as f:
             json.dump(self.cache, f)
+
+    def _should_process_file(self, file_path: str, exclude_folders: List[str] = []) -> bool:
+        """Check if file should be processed"""
+        path = Path(file_path)
+        
+        # Check excluded folders
+        for folder in exclude_folders:
+            folder = folder.strip('/')
+            if folder in str(path.parent).split('/'):
+                return False
+        
+        # Check file type if specified
+        if self.file_types:
+            return path.suffix.lower() in self.file_types
+            
+        return True
+
+    def _broadcast_paths(self):
+        """Broadcast paths and configuration to all workers"""
+        self.broadcast_repo_path = self.spark.sparkContext.broadcast(str(self.repo_path))
+        self.broadcast_temp_dir = self.spark.sparkContext.broadcast(str(self.temp_dir))
+        self.broadcast_threads = self.spark.sparkContext.broadcast(self.threads_per_worker)
+        self.broadcast_local_hostname = self.spark.sparkContext.broadcast(self.local_hostname)
+        self.broadcast_file_types = self.spark.sparkContext.broadcast(self.file_types)
 
     def _create_selective_archive(self) -> str:
         """Create compressed archive of repository with only selected file types"""
@@ -156,158 +186,6 @@ class GitCommitDateExtractor:
         finally:
             os.unlink(temp_archive.name)
             os.unlink(temp_file_list.name)
-
-    @staticmethod
-    @lru_cache(maxsize=1024)
-    def _get_file_dates_cached(repo_path: str, file_path: str, get_created: bool,
-                             get_content_change: bool) -> Dict[str, str]:
-        """Cached version of get_file_dates"""
-        return GitCommitDateExtractor._get_file_dates(
-            repo_path, file_path, get_created, get_content_change
-        )
-
-    def process_batch(self, batch: List[str], worker_repo_path: str,
-                     get_created: bool, get_content_change: bool) -> List[Tuple[str, Dict]]:
-        """Process a batch of files with caching"""
-        results = []
-        cache_key = f"{get_created}_{get_content_change}"
-        
-        for file_path in batch:
-            # Check cache first
-            cache_entry = self.cache.get(file_path, {}).get(cache_key)
-            if cache_entry:
-                results.append((file_path, cache_entry))
-                continue
-            
-            # If not in cache, process the file
-            dates = self._get_file_dates_cached(
-                worker_repo_path,
-                file_path,
-                get_created,
-                get_content_change
-            )
-            
-            if dates:
-                # Update cache
-                if file_path not in self.cache:
-                    self.cache[file_path] = {}
-                self.cache[file_path][cache_key] = dates
-                results.append((file_path, dates))
-        
-        return results
-
-    def get_commit_dates_distributed(self, files: List[str], get_created: bool = False,
-                                   get_content_change: bool = False,
-                                   num_partitions: Optional[int] = None) -> Dict[str, Dict[str, datetime]]:
-        """
-        Get commit dates using distributed processing with batching and caching.
-        """
-        if not files:
-            return {}
-        
-        total_start_time = time.time()
-        logger.info(f"Starting distributed processing of {len(files)} files")
-        
-        # Calculate optimal number of partitions
-        if num_partitions is None:
-            suggested_partitions = max(
-                len(files) // self.BATCH_SIZE,
-                self.spark.sparkContext.defaultParallelism
-            )
-            num_partitions = min(suggested_partitions, len(files))
-        
-        logger.info(f"Using {num_partitions} partitions across cluster")
-        
-        # Create and broadcast repository archive
-        compressed_repo = self._create_selective_archive()
-        broadcast_repo = self.spark.sparkContext.broadcast(compressed_repo)
-        broadcast_config = self.spark.sparkContext.broadcast({
-            'temp_dir': str(self.temp_dir),
-            'threads': self.threads_per_worker,
-            'local_hostname': self.local_hostname,
-            'get_created': get_created,
-            'get_content_change': get_content_change,
-            'batch_size': self.BATCH_SIZE
-        })
-        
-        def process_partition(iterator):
-            """Process files in partition with batching"""
-            config = broadcast_config.value
-            current_hostname = socket.gethostname()
-            
-            worker_repo_path = self._setup_worker_repo(
-                broadcast_repo.value,
-                config['temp_dir'],
-                config['local_hostname']
-            )
-            
-            try:
-                files_list = list(iterator)
-                results = []
-                
-                # Process files in batches
-                for i in range(0, len(files_list), config['batch_size']):
-                    batch = files_list[i:i + config['batch_size']]
-                    batch_results = self.process_batch(
-                        batch,
-                        worker_repo_path,
-                        config['get_created'],
-                        config['get_content_change']
-                    )
-                    results.extend(batch_results)
-                    
-                    logger.info(f"Processed batch {i//config['batch_size'] + 1} on {current_hostname}")
-                
-                return results
-            finally:
-                if current_hostname != config['local_hostname']:
-                    shutil.rmtree(worker_repo_path, ignore_errors=True)
-        
-        # Process files using Spark
-        files_rdd = self.spark.sparkContext.parallelize(files, num_partitions)
-        results = files_rdd.mapPartitions(process_partition).collect()
-        
-        # Cleanup broadcasts
-        broadcast_repo.unpersist()
-        broadcast_config.unpersist()
-        
-        # Save updated cache
-        self._save_cache()
-        
-        total_time = time.time() - total_start_time
-        logger.info(f"Total processing completed in {total_time:.2f} seconds")
-        
-        return dict(results)
-
-        def _normalize_extensions(self, extensions: Optional[List[str]]) -> Optional[List[str]]:
-        """Normalize file extensions"""
-        if extensions is None:
-            return None
-        return [f'.{ext.lower().lstrip(".")}' for ext in extensions]
-
-    def _should_process_file(self, file_path: str, exclude_folders: List[str] = []) -> bool:
-        """Check if file should be processed"""
-        path = Path(file_path)
-        
-        # Check excluded folders
-        for folder in exclude_folders:
-            folder = folder.strip('/')
-            if folder in str(path.parent).split('/'):
-                return False
-        
-        # Check file type if specified
-        if self.file_types:
-            return path.suffix.lower() in self.file_types
-            
-        return True
-
-    def _broadcast_paths(self):
-        """Broadcast paths and configuration to all workers"""
-        self.broadcast_repo_path = self.spark.sparkContext.broadcast(str(self.repo_path))
-        self.broadcast_temp_dir = self.spark.sparkContext.broadcast(str(self.temp_dir))
-        self.broadcast_threads = self.spark.sparkContext.broadcast(self.threads_per_worker)
-        self.broadcast_local_hostname = self.spark.sparkContext.broadcast(self.local_hostname)
-        self.broadcast_file_types = self.spark.sparkContext.broadcast(self.file_types)
 
     @staticmethod
     def _setup_worker_repo(compressed_repo: str, temp_dir: str, local_hostname: str) -> str:
@@ -411,6 +289,45 @@ class GitCommitDateExtractor:
         except subprocess.CalledProcessError:
             return {}
 
+    @staticmethod
+    @lru_cache(maxsize=1024)
+    def _get_file_dates_cached(repo_path: str, file_path: str, get_created: bool,
+                             get_content_change: bool) -> Dict[str, str]:
+        """Cached version of get_file_dates"""
+        return GitCommitDateExtractor._get_file_dates(
+            repo_path, file_path, get_created, get_content_change
+        )
+
+    def process_batch(self, batch: List[str], worker_repo_path: str,
+                     get_created: bool, get_content_change: bool) -> List[Tuple[str, Dict]]:
+        """Process a batch of files with caching"""
+        results = []
+        cache_key = f"{get_created}_{get_content_change}"
+        
+        for file_path in batch:
+            # Check cache first
+            cache_entry = self.cache.get(file_path, {}).get(cache_key)
+            if cache_entry:
+                results.append((file_path, cache_entry))
+                continue
+            
+            # If not in cache, process the file
+            dates = self._get_file_dates_cached(
+                worker_repo_path,
+                file_path,
+                get_created,
+                get_content_change
+            )
+            
+            if dates:
+                # Update cache
+                if file_path not in self.cache:
+                    self.cache[file_path] = {}
+                self.cache[file_path][cache_key] = dates
+                results.append((file_path, dates))
+        
+        return results
+
     def get_all_files(self, exclude_folders: List[str] = []) -> List[str]:
         """
         Get filtered list of files from repository.
@@ -426,6 +343,89 @@ class GitCommitDateExtractor:
         
         all_files = output.splitlines()
         return [f for f in all_files if self._should_process_file(f, exclude_folders)]
+
+    def get_commit_dates_distributed(self, files: List[str], get_created: bool = False,
+                                   get_content_change: bool = False,
+                                   num_partitions: Optional[int] = None) -> Dict[str, Dict[str, datetime]]:
+        """
+        Get commit dates using distributed processing with batching and caching.
+        """
+        if not files:
+            return {}
+        
+        total_start_time = time.time()
+        logger.info(f"Starting distributed processing of {len(files)} files")
+        
+        # Calculate optimal number of partitions
+        if num_partitions is None:
+            suggested_partitions = max(
+                len(files) // self.BATCH_SIZE,
+                self.spark.sparkContext.defaultParallelism
+            )
+            num_partitions = min(suggested_partitions, len(files))
+        
+        logger.info(f"Using {num_partitions} partitions across cluster")
+        
+        # Create and broadcast repository archive
+        compressed_repo = self._create_selective_archive()
+        broadcast_repo = self.spark.sparkContext.broadcast(compressed_repo)
+        broadcast_config = self.spark.sparkContext.broadcast({
+            'temp_dir': str(self.temp_dir),
+            'threads': self.threads_per_worker,
+            'local_hostname': self.local_hostname,
+            'get_created': get_created,
+            'get_content_change': get_content_change,
+            'batch_size': self.BATCH_SIZE
+        })
+        
+        def process_partition(iterator):
+            """Process files in partition with batching"""
+            config = broadcast_config.value
+            current_hostname = socket.gethostname()
+            
+            worker_repo_path = self._setup_worker_repo(
+                broadcast_repo.value,
+                config['temp_dir'],
+                config['local_hostname']
+            )
+            
+            try:
+                files_list = list(iterator)
+                results = []
+                
+                # Process files in batches
+                for i in range(0, len(files_list), config['batch_size']):
+                    batch = files_list[i:i + config['batch_size']]
+                    batch_results = self.process_batch(
+                        batch,
+                        worker_repo_path,
+                        config['get_created'],
+                        config['get_content_change']
+                    )
+                    results.extend(batch_results)
+                    
+                    logger.info(f"Processed batch {i//config['batch_size'] + 1} on {current_hostname}")
+                
+                return results
+            finally:
+                if current_hostname != config['local_hostname']:
+                    shutil.rmtree(worker_repo_path, ignore_errors=True)
+        
+        # Process files using Spark
+        files_rdd = self.spark.sparkContext.parallelize(files, num_partitions)
+        results = files_rdd.mapPartitions(process_partition).collect()
+        
+        # Cleanup broadcasts
+        broadcast_repo.unpersist()
+        broadcast_config.unpersist()
+        
+        # Save updated cache
+        self._save_cache()
+        
+        total_time = time.time() - total_start_time
+        logger.info(f"Total processing completed in {total_time:.2f} seconds")
+        
+        return dict(results)
 
     def cleanup(self):
         """Cleanup resources and temporary files"""
@@ -465,45 +465,3 @@ class GitCommitDateExtractor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit"""
         self.cleanup()
-
-
-# Example Usage
-if __name__ == "__main__":
-    # Example 1: Basic usage with specific file types
-    with GitCommitDateExtractor(
-        repo_path="/path/to/repo",
-        file_types=['py', 'java']
-    ) as extractor:
-        # Get all matching files
-        files = extractor.get_all_files(exclude_folders=['tests', 'docs'])
-        
-        # Get commit dates with caching and batching
-        dates = extractor.get_commit_dates_distributed(
-            files,
-            get_created=True,
-            get_content_change=True
-        )
-        
-        # Print results
-        for file_path, file_dates in dates.items():
-            print(f"\nFile: {file_path}")
-            if 'latest' in file_dates:
-                print(f"  Latest commit: {file_dates['latest']}")
-            if 'created' in file_dates:
-                print(f"  Created: {file_dates['created']}")
-            if 'content_change' in file_dates:
-                print(f"  Last content change: {file_dates['content_change']}")
-    
-    # Example 2: Using custom batch size and partitions
-    extractor = GitCommitDateExtractor("/path/to/repo")
-    extractor.BATCH_SIZE = 500  # Custom batch size
-    
-    try:
-        files = extractor.get_all_files()
-        dates = extractor.get_commit_dates_distributed(
-            files,
-            num_partitions=10  # Custom number of partitions
-        )
-        # Process results...
-    finally:
-        extractor.cleanup()
