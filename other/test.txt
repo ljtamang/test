@@ -1,83 +1,90 @@
-# GitHub ETL Pipeline
+from datetime import datetime
+import logging
 
-This project implements a data pipeline for processing GitHub repositories through bronze, silver, and gold layers for Azure Search ingestion.
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
-## Project Structure
-
-```text
-github_etl/
-|-- notebooks/
-    |-- bronze_github_ingestion.py    # Raw data ingestion from GitHub
-    |-- silver_file_selection.py      # Business rules and file selection
-    |-- gold_search_prep.py          # Azure Search preparation
-
-|-- utils/
-    |-- __init__.py
-    |-- git_helper.py                # GitHub API interactions & git operations
-    |-- file_helper.py               # File operations, pattern matching
-    |-- delta_helper.py              # Delta Lake operations
-    |-- search_helper.py             # Azure Search operations
-    |-- spark_helper.py              # Spark operations and utilities
-
-|-- config/
-    |-- pipeline_config.py           # Configuration parameters
-
-|-- tests/
-    |-- test_git_helper.py
-    |-- test_file_helper.py
-    |-- test_delta_helper.py
-
-|-- README.md
-```
-
-## Directory Description
-
-### notebooks/
-Main pipeline notebooks for each layer of data processing:
-* bronze_github_ingestion.py: Handles raw data ingestion from GitHub repositories
-* silver_file_selection.py: Implements business rules for file selection
-* gold_search_prep.py: Prepares data for Azure Search ingestion
-
-### utils/
-Helper modules for different functionalities:
-* git_helper.py: GitHub API interactions and git operations
-* file_helper.py: File operations and pattern matching utilities
-* delta_helper.py: Delta Lake operations and utilities
-* search_helper.py: Azure Search related operations
-* spark_helper.py: Spark optimization and utilities
-
-### config/
-Configuration files:
-* pipeline_config.py: Contains pipeline parameters and settings
-
-### tests/
-Unit tests for utility modules:
-* test_git_helper.py: Tests for GitHub operations
-* test_file_helper.py: Tests for file operations
-* test_delta_helper.py: Tests for Delta Lake operations
-
-## Pipeline Overview
-
-1. **Bronze Layer** (Raw Data)
-   - Ingests raw data from GitHub repositories
-   - Extracts file metadata and content
-   - Stores in Delta format
-
-2. **Silver Layer** (Refined Data)
-   - Applies business rules for file selection
-   - Resolves latest versions of files
-   - Maintains clean, filtered dataset
-
-3. **Gold Layer** (Presentation Data)
-   - Prepares data for Azure Search
-   - Optimizes format for search indexing
-   - Ensures data quality for end-users
-
-## Getting Started
-
-1. Configure GitHub access in config/pipeline_config.py
-2. Run notebooks in sequence:
-   - bronze_github_ingestion
-   - silver_file_selection
-   - gold_search_prep
-3. Monitor execution in Databricks workflow
+def process_large_repo():
+    """
+    Process a large repository with specific file types and exclusions.
+    Only copies essential file types to worker nodes and excludes .git folder
+    from file metadata processing.
+    """
+    
+    # Initialize with specific file types to minimize data transfer
+    extractor = GitCommitDateExtractor(
+        repo_path="/path/to/large/repo",
+        temp_dir="/mnt/fast_disk/git_temp",  # Use fast storage
+        threads_per_worker=16,               # Increase parallel processing
+        file_types=[                         # Only copy and process these files
+            'py',    # Python files
+            'java',  # Java files
+            'cpp',   # C++ files
+            'h',     # Header files
+            'jsx',   # React files
+            'ts'     # TypeScript files
+        ]
+    )
+    
+    try:
+        # Get files excluding .git and other directories
+        files = extractor.get_all_files(
+            exclude_folders=[
+                '.git',      # Git directory
+                'node_modules',
+                'build',
+                'dist',
+                'venv',
+                'env',
+                '__pycache__'
+            ]
+        )
+        
+        total_files = len(files)
+        print(f"Found {total_files} files to process")
+        
+        # Process in chunks to manage memory
+        chunk_size = 5000
+        start_time = datetime.now()
+        
+        for i in range(0, total_files, chunk_size):
+            chunk = files[i:i + chunk_size]
+            chunk_num = i // chunk_size + 1
+            total_chunks = (total_files + chunk_size - 1) // chunk_size
+            
+            print(f"\nProcessing chunk {chunk_num}/{total_chunks}")
+            print(f"Files {i + 1} to {min(i + chunk_size, total_files)} of {total_files}")
+            
+            # Process current chunk with desired date information
+            dates = extractor.get_commit_dates_distributed(
+                chunk,
+                get_created=True,          # Get file creation date
+                get_content_change=True,    # Get last content modification
+                num_partitions=20          # Adjust based on cluster size
+            )
+            
+            # Process results for current chunk
+            for file_path, file_dates in dates.items():
+                print(f"\nFile: {file_path}")
+                if 'created' in file_dates:
+                    print(f"  Created: {file_dates['created']}")
+                if 'latest' in file_dates:
+                    print(f"  Latest commit: {file_dates['latest']}")
+                if 'content_change' in file_dates:
+                    print(f"  Last content change: {file_dates['content_change']}")
+            
+            # Show progress
+            elapsed_time = (datetime.now() - start_time).total_seconds()
+            files_processed = min(i + chunk_size, total_files)
+            rate = files_processed / elapsed_time if elapsed_time > 0 else 0
+            
+            print(f"\nProgress: {(files_processed/total_files)*100:.2f}%")
+            print(f"Processing rate: {rate:.2f} files/second")
+            print(f"Elapsed time: {elapsed_time:.2f} seconds")
+            
+    finally:
+        extractor.cleanup()
