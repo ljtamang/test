@@ -1,90 +1,59 @@
+import subprocess
+import os
 from datetime import datetime
-import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+def get_last_commit_dates(repo_path, files):
+    """
+    Get the last commit date for each file in a Git repository.
 
-def process_large_repo():
+    Args:
+        repo_path (str): The path to the Git repository.
+        files (list): A list of file paths (relative to the repo_path or absolute).
+
+    Returns:
+        dict: A dictionary mapping each file to its last commit date (or None if not found).
     """
-    Process a large repository with specific file types and exclusions.
-    Only copies essential file types to worker nodes and excludes .git folder
-    from file metadata processing.
-    """
-    
-    # Initialize with specific file types to minimize data transfer
-    extractor = GitCommitDateExtractor(
-        repo_path="/path/to/large/repo",
-        temp_dir="/mnt/fast_disk/git_temp",  # Use fast storage
-        threads_per_worker=16,               # Increase parallel processing
-        file_types=[                         # Only copy and process these files
-            'py',    # Python files
-            'java',  # Java files
-            'cpp',   # C++ files
-            'h',     # Header files
-            'jsx',   # React files
-            'ts'     # TypeScript files
-        ]
-    )
-    
+    commit_dates = {}
+
+    # Ensure the repository path is absolute
+    repo_path = os.path.abspath(repo_path)
+
     try:
-        # Get files excluding .git and other directories
-        files = extractor.get_all_files(
-            exclude_folders=[
-                '.git',      # Git directory
-                'node_modules',
-                'build',
-                'dist',
-                'venv',
-                'env',
-                '__pycache__'
-            ]
+        # Prepare file list as relative paths to the repo
+        relative_files = [os.path.relpath(os.path.abspath(file), repo_path) for file in files]
+        
+        # Run git log for all files at once
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%cd"] + relative_files,
+            cwd=repo_path,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
         )
-        
-        total_files = len(files)
-        print(f"Found {total_files} files to process")
-        
-        # Process in chunks to manage memory
-        chunk_size = 5000
-        start_time = datetime.now()
-        
-        for i in range(0, total_files, chunk_size):
-            chunk = files[i:i + chunk_size]
-            chunk_num = i // chunk_size + 1
-            total_chunks = (total_files + chunk_size - 1) // chunk_size
-            
-            print(f"\nProcessing chunk {chunk_num}/{total_chunks}")
-            print(f"Files {i + 1} to {min(i + chunk_size, total_files)} of {total_files}")
-            
-            # Process current chunk with desired date information
-            dates = extractor.get_commit_dates_distributed(
-                chunk,
-                get_created=True,          # Get file creation date
-                get_content_change=True,    # Get last content modification
-                num_partitions=20          # Adjust based on cluster size
-            )
-            
-            # Process results for current chunk
-            for file_path, file_dates in dates.items():
-                print(f"\nFile: {file_path}")
-                if 'created' in file_dates:
-                    print(f"  Created: {file_dates['created']}")
-                if 'latest' in file_dates:
-                    print(f"  Latest commit: {file_dates['latest']}")
-                if 'content_change' in file_dates:
-                    print(f"  Last content change: {file_dates['content_change']}")
-            
-            # Show progress
-            elapsed_time = (datetime.now() - start_time).total_seconds()
-            files_processed = min(i + chunk_size, total_files)
-            rate = files_processed / elapsed_time if elapsed_time > 0 else 0
-            
-            print(f"\nProgress: {(files_processed/total_files)*100:.2f}%")
-            print(f"Processing rate: {rate:.2f} files/second")
-            print(f"Elapsed time: {elapsed_time:.2f} seconds")
-            
-    finally:
-        extractor.cleanup()
+
+        # Process git log output
+        output_lines = result.stdout.strip().splitlines()
+        for file, date_str in zip(files, output_lines):
+            try:
+                commit_date = datetime.strptime(date_str, "%a %b %d %H:%M:%S %Y %z")
+                commit_dates[file] = commit_date
+            except ValueError:
+                commit_dates[file] = None
+    except subprocess.CalledProcessError:
+        for file in files:
+            commit_dates[file] = None  # If git fails, mark as None
+    except Exception as e:
+        print(f"Error: {e}")
+        for file in files:
+            commit_dates[file] = None
+
+    return commit_dates
+
+# Example usage
+repo_path = "/path/to/git/repo"
+files = ["file1.txt", "/absolute/path/to/file2.py", "relative/path/to/file3.md"]
+commit_dates = get_last_commit_dates(repo_path, files)
+
+for file, date in commit_dates.items():
+    print(f"File: {file}, Last Commit Date: {date}")
