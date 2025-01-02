@@ -1,77 +1,17 @@
-import subprocess
-import os
-from datetime import datetime
 
-def get_last_commit_dates_fast(repo_path, files):
-    """
-    Get the last commit date for each file in a Git repository quickly using batch processing.
+Bronze Layer
 
-    Args:
-        repo_path (str): The path to the Git repository.
-        files (list): A list of file paths (relative to the repo_path or absolute).
+I wanted to get suggestion on steps to be carried out Bronze Ingestion Piepleine. Give me 1) Clear Inputs and Clear Outputs and goal of this layer 2) Stepswise detail to follow from input to output.
 
-    Returns:
-        dict: A dictionary mapping each file to its last commit date (or None if not found).
-    """
-    commit_dates = {}
+Input: Github Repo Information
+Output: Raw Files + Metadata
 
-    # Ensure the repository path is absolute
-    repo_path = os.path.abspath(repo_path)
+Suggest Best Architecure or standard pratice for Bronze Ingestion. My intutation is we can follow two process. The first step is LoadAll which will get target raw files and related metadata. The other run are subsequent run which UpdateRun, which will run preodically and will get any new target raw files plus their metadata, and it will also update any metadata changes for exisitng files ( such as new commit date, etc).
 
-    # Prepare file list as relative paths to the repo
-    relative_files = [os.path.relpath(os.path.abspath(file), repo_path) for file in files]
+Here is More detail.
 
-    try:
-        # Run git log with --name-only to get commit details and affected files
-        result = subprocess.run(
-            ["git", "log", "--format=%cd %H", "--name-only"] + relative_files,
-            cwd=repo_path,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True
-        )
-
-        # Parse output to extract commit dates and associated files
-        output_lines = result.stdout.strip().split("\n")
-        current_date = None
-
-        # Map each file to its latest commit date
-        for line in output_lines:
-            if line.strip() == "":
-                # Empty line indicates a new commit block
-                current_date = None
-            elif current_date is None:
-                # Parse the commit date
-                try:
-                    date_str = " ".join(line.split()[:-1])  # Exclude the commit hash
-                    current_date = datetime.strptime(date_str, "%a %b %d %H:%M:%S %Y %z")
-                except ValueError:
-                    current_date = None
-            else:
-                # File associated with the current commit
-                file_path = os.path.abspath(os.path.join(repo_path, line.strip()))
-                if file_path in commit_dates:
-                    continue
-                commit_dates[file_path] = current_date
-
-        # Fill in files that were not found in the git log
-        for file in relative_files:
-            abs_file = os.path.abspath(os.path.join(repo_path, file))
-            if abs_file not in commit_dates:
-                commit_dates[abs_file] = None
-
-    except subprocess.CalledProcessError as e:
-        print(f"Git command failed: {e.stderr}")
-        for file in files:
-            commit_dates[file] = None
-
-    return commit_dates
-
-# Example usage
-repo_path = "/path/to/git/repo"
-files = ["file1.txt", "/absolute/path/to/file2.py", "relative/path/to/file3.md"]
-commit_dates = get_last_commit_dates_fast(repo_path, files)
-
-for file, date in commit_dates.items():
-    print(f"File: {file}, Last Commit Date: {date}")
+I am ingesting https://github.com/department-of-veterans-affairs/va.gov-team and only products folder of this repo.
+I am writing code to carry the steps in Azure Databrick notebook.
+I am writing  the output raw files and metadata in azure blob storage. This blob storage is mounted to databrick workspace where I am writing the code.
+My output raw files are not all products folder of the repo. My target files for now are are only research finding and .md type of files. The goal is to be able to get file name and then apply some rules to filter only research finding files. I have all file names of resaerch finding that I have manually identfied which I want to use to derive rules that will help to catch simialr files which are research finding based on file name.
+My output metadata should have followin strucure
