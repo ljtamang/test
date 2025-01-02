@@ -3,8 +3,19 @@ Bronze Layer
 
 I wanted to get suggestion on steps to be carried out Bronze Ingestion Piepleine. Give me 1) Clear Inputs and Clear Outputs and goal of this layer 2) Stepswise detail to follow from input to output.
 
-Input: Github Repo Information
-Output: Raw Files + Metadata
+Input: GitHub repository (filtered to the products folder)
+Output: Target research raw files and associated metadata. These raw files should be only of .md types. Also, the target files are only files which are research findings types
+
+I have all file names that are reserch finding which I have manually identfied. I wanted to take advantage of this file names to derive rules that will help to catch simialr files which are research finding. These dervied rules can be used to filter all git repo files input to filter only files that are resaerch findings. My output metadata should have only needed information like file name, file size, file type, commit date etc and anythign that will help me update ony new files or capture new information when updates ingestion script is runned.
+
+
+Suggest Best Architecure or standard pratice for Bronze Ingestion to ingest input and generate output described above. Give intermediately steps to acheve this based on standardard pratice for bronze ingestion.
+
+Here is More detail.
+
+I am ingesting https://github.com/department-of-veterans-affairs/va.gov-team and only products folder of this repo.
+I am writing code to carry the steps in Azure Databrick notebook.
+I am writing  the output raw files and metadata in azure blob storage. This blob storage is mounted to databrick workspace where I am writing the code.
 
 Suggest Best Architecure or standard pratice for Bronze Ingestion. My intutation is we can follow two process. The first step is LoadAll which will get target raw files and related metadata. The other run are subsequent run which UpdateRun, which will run preodically and will get any new target raw files plus their metadata, and it will also update any metadata changes for exisitng files ( such as new commit date, etc).
 
@@ -13,5 +24,6 @@ Here is More detail.
 I am ingesting https://github.com/department-of-veterans-affairs/va.gov-team and only products folder of this repo.
 I am writing code to carry the steps in Azure Databrick notebook.
 I am writing  the output raw files and metadata in azure blob storage. This blob storage is mounted to databrick workspace where I am writing the code.
-My output raw files are not all products folder of the repo. My target files for now are are only research finding and .md type of files. The goal is to be able to get file name and then apply some rules to filter only research finding files. I have all file names of resaerch finding that I have manually identfied which I want to use to derive rules that will help to catch simialr files which are research finding based on file name.
-My output metadata should have followin strucure
+
+The goal is to be able to get file name and then apply some rules to filter only research finding files. I have all file names of resaerch finding that I have manually identfied which I want to use to derive rules that will help to catch simialr files which are research finding based on file name.
+My output metadata should have only needed information like file name, file size, file type, commit date etc and anythign that will help me update ony new files or capture new information when updates ingestion script is runned.
