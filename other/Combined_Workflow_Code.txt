@@ -1,65 +1,41 @@
-import os
-from typing import List, Dict
-from pathlib import Path
-
-def list_files_by_extensions(
-    base_path: str,
-    target_extensions: List[str],
-    recursive: bool = True
-) -> List[Dict[str, str]]:
-    """
-    Lists all files with specified extensions in the given directory.
-    
-    Args:
-        base_path (str): Base directory path to start searching from
-        target_extensions (List[str]): List of file extensions to search for (e.g., ['.md', '.txt'])
-        recursive (bool): Whether to search recursively in subdirectories (default: True)
-    
-    Returns:
-        List[Dict[str, str]]: List of dictionaries containing file information
-            Each dictionary contains:
-            - 'file_name': Name of the file
-            - 'file_path': Full path to the file
-    """
-    # Normalize extensions (ensure they start with '.' and are lowercase)
-    target_extensions = [ext.lower() if ext.startswith('.') else f'.{ext.lower()}' 
-                        for ext in target_extensions]
-    
-    found_files = []
-    base_path = Path(base_path)
-    
-    try:
-        # Define the pattern based on recursive flag
-        pattern = '**/*' if recursive else '*'
-        
-        # Iterate through all files
-        for file_path in base_path.glob(pattern):
-            if file_path.is_file() and file_path.suffix.lower() in target_extensions:
-                found_files.append({
-                    'file_name': file_path.name,
-                    'file_path': str(file_path.absolute())
-                })
-                
-        return found_files
-    
-    except Exception as e:
-        print(f"Error while listing files: {str(e)}")
-        return []
-
-
----------
-
-# Import the function from file_helper
-from file_helper import list_files_by_extensions
-
-# Define the base path (products folder in your cloned repo)
-products_path = "/tmp/va.gov-team/products"
-
-# Define target extensions
-target_extensions = ['.md']
-
-# Get list of markdown files
-markdown_files = list_files_by_extensions(
-    base_path=products_path,
-    target_extensions=target_extensions
-)
+2023-09-secondary-research-accredited-representation-management.md
+research-report.md
+research-findings.md
+Findings.md
+Prefill Research Report 09_2024.md
+beta_test_synthesis_2021.md
+research findings.md
+research-findings-01.31.2019.md
+topline summary_research findings.md
+11-2023-family-hub-research-findings.md
+pre-discovery-research.md
+research-findings-r1.md
+526 Landing Pages Redesign Research Findings.pdf
+heuristic-review-summary-of-finding.md
+research-summary.md
+researchreport.md
+ITF Research Summary.md
+2023-10 Research Findings.md
+8940-userresearch-findingsnotes.pdf
+Findings 526 Usability Test Aug 2021.pdf
+PACT-Act-research-report.md
+2023-07-max-CFI-report.md
+2024-01-Max-CFI-Refinements-Report.md
+session-report.md
+Research-findings-test2.md
+BDD-research-findings.md
+design-discovery.md
+key-findings-9-28-16.md
+key-research-findings.md
+research-readout.md
+CLC-DISCOVERY-FINDINGS.md
+9.29researchfindings.md
+user-research-findings.md
+esearch-findings.md
+research-findings-add-01.md
+2020-yellow-ribbon-research-findings.pptx
+research-findings-phases1&2.md
+Research-Findings-Round1.md
+research-report-round1.md
+round 1 Research Findings Report.md
+Research Finding.md
