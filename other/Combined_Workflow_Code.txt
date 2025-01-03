@@ -1,57 +1,52 @@
-filename_keywords = [
-    # Core research terms
-    'research',
-    'findings',
-    'finding',
-    'report',
+content_markers = [
+    # Major Research Sections (found consistently in both)
+    'Research Goals',
+    'Research goals',  # Both cases since files use different casing
+    'Research Questions',
+    'Research questions',
+    'Methodology',
+    'Key Findings',
+    'Key findings',
+    'Details of Findings',
+    'Details of findings',
     
-    # Common combinations
-    'research-findings',
-    'research findings',
-    'research-report',
-    'research report',
-    'research summary',
-    'research-summary',
-    'findings report',
+    # Common Subsections
+    'Hypotheses',
+    'Hypothesis',
+    'Findings',
+    'Finding 1',
+    'Finding 2',
+    'Finding 3',
     
-    # Report variations
-    'readout',
-    'summary',
-    'synthesis',
+    # Analysis & Results
+    'Additional Insights',
+    'Additional insights',
+    'Recommendations',
+    'Next Steps',
+    'Next steps',
+    'Further Research Needed',
+    'Further research needed',
     
-    # Research types
-    'discovery',
-    'usability',
-    'analytics',
-    'analysis',
+    # Methods & Study Details
+    'Who we talked to',
+    'Who We Talked To',
+    'Tools used for synthesis',
+    'Appendix',
     
-    # Specific research formats
-    'researchstudy',
-    'research study',
-    'userresearch',
-    'user research',
+    # Common Elements
+    '_Quotes_',
+    'Quotes',
+    '> "',  # Quote marker
     
-    # Study indicators
-    'round',
-    'phase',
-    'test',
+    # Demographics/Recruitment 
+    'Recruitment criteria',
+    'Study Recruitment',
+    'Demographics',
+    'Audience segment',
     
-    # Common prefixes/suffixes
-    'pre-discovery',
-    'prediscovery',
-    
-    # Result indicators
-    'results',
-    'recommendations',
-    
-    # Specific document types
-    'research share',
-    'research share out',
-    'research readout',
-    'research review',
-    
-    # Additional patterns seen
-    'unmoderated research',
-    'identity research',
-    'content research',
+    # Research Context
+    'Research Background',
+    'Background',
+    'Research goals',
+    'Study goals'
 ]
