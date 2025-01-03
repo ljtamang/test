@@ -3,14 +3,19 @@
         "repo_name": "va.gov-team",
         "repo_url": "https://github.com/department-of-veterans-affairs/va.gov-team",
         "branch": "main",
-        "target_folders": ["products"]
+        "sparse_checkout_paths": ["products"]
+    },
+    "processing": {
+        "target_file_types": [
+            "md",
+            "markdown"
+        ]
     },
     "storage": {
         "blob_storage_path": "/dbfs/mnt/blob/bronze/raw-data",
         "metadata_file": "/dbfs/mnt/blob/raw/bronze/metadata/metadata.json"
     }
 }
-
 
 ------------
 
@@ -44,7 +49,7 @@ from typing import List
 def sparse_checkout(
     repo_url: str,
     local_path: str,
-    target_folders: List[str],
+    sparse_checkout_paths: List[str],
     branch: str = "main"
 ) -> bool:
     """
@@ -53,7 +58,7 @@ def sparse_checkout(
     Args:
         repo_url (str): URL of the git repository to clone
         local_path (str): Local path where the repository should be cloned
-        target_folders (List[str]): List of folders to include in sparse checkout
+        sparse_checkout_paths (List[str]): List of paths to include in sparse checkout
         branch (str, optional): Branch to checkout. Defaults to "main"
 
     Returns:
@@ -77,8 +82,8 @@ def sparse_checkout(
         
         sparse_checkout_path = os.path.join(local_path, '.git', 'info', 'sparse-checkout')
         with open(sparse_checkout_path, 'w') as f:
-            for folder in target_folders:
-                f.write(f"{folder}/*\n")
+            for path in sparse_checkout_paths:
+                f.write(f"{path}/*\n")
         
         subprocess.run(['git', 'pull', 'origin', branch], cwd=local_path, check=True)
         print(f"Successfully cloned repository {repo_url} ({branch} branch) to {local_path}")
@@ -103,13 +108,13 @@ config = load_json("bronze_config.json")
 repo_config = config["repository"]
 repo_url = repo_config["repo_url"]
 local_path = f"/tmp/{repo_config['repo_name']}"
-target_folders = repo_config["target_folders"]
+sparse_checkout_paths = repo_config["sparse_checkout_paths"]
 branch = repo_config["branch"]
 
 # Perform sparse checkout
 success = sparse_checkout(
     repo_url=repo_url,
     local_path=local_path,
-    target_folders=target_folders,
+    sparse_checkout_paths=sparse_checkout_paths,
     branch=branch
 )
