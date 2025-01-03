@@ -2,8 +2,7 @@
 
 import re
 from typing import List, Dict, Set
-import PyPDF2
-import io
+from pathlib import Path
 
 def normalize_filename(filename: str) -> str:
     """
@@ -15,11 +14,8 @@ def normalize_filename(filename: str) -> str:
     Returns:
         str: Normalized filename
     """
-    # Convert to lowercase
     normalized = filename.lower()
-    # Replace hyphens and underscores with spaces
     normalized = normalized.replace('-', ' ').replace('_', ' ')
-    # Remove multiple spaces
     normalized = ' '.join(normalized.split())
     return normalized
 
@@ -36,18 +32,9 @@ def read_file_content(file_path: str, max_chars: int = 2000) -> str:
     """
     try:
         if file_path.lower().endswith('.pdf'):
-            with open(file_path, 'rb') as file:
-                # Create PDF reader object
-                pdf_reader = PyPDF2.PdfReader(file)
-                
-                # Read first few pages until we get enough text
-                content = ""
-                for page in pdf_reader.pages:
-                    content += page.extract_text() or ""
-                    if len(content) >= max_chars:
-                        break
-                
-                return content[:max_chars]
+            # Placeholder for PDF handling
+            # TODO: Implement PDF reading functionality
+            pass
         else:
             # For markdown and other text files
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -73,8 +60,6 @@ def list_files_by_extensions(
     Returns:
         List[Dict[str, str]]: List of dictionaries containing file information
     """
-    from pathlib import Path
-    
     # Normalize extensions
     target_extensions = [ext.lower() if ext.startswith('.') else f'.{ext.lower()}' 
                         for ext in target_extensions]
@@ -222,12 +207,13 @@ def identify_research_files(
             if normalized_keyword in normalized_path:
                 score += 1
         
-        # Check content markers
-        content = read_file_content(file_path)
-        normalized_content = content.lower()
-        for marker in content_markers:
-            if marker.lower() in normalized_content:
-                score += 2
+        # Check content markers only for non-PDF files for now
+        if not file_path.lower().endswith('.pdf'):
+            content = read_file_content(file_path)
+            normalized_content = content.lower()
+            for marker in content_markers:
+                if marker.lower() in normalized_content:
+                    score += 2
             
         # Add additional metadata to file_info
         file_info['research_score'] = score
