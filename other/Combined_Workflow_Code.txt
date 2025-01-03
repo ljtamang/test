@@ -1,52 +1,47 @@
 content_markers = [
-    # Major Research Sections (found consistently in both)
-    'Research Goals',
-    'Research goals',  # Both cases since files use different casing
-    'Research Questions',
-    'Research questions',
-    'Methodology',
-    'Key Findings',
-    'Key findings',
-    'Details of Findings',
-    'Details of findings',
+    # Strong Results & Analysis Markers (only in findings)
+    'Analysis and Findings',
+    'Details of Finding',
+    'Study Results',
+    'Research synthesis',
+    'Research Analysis',
     
-    # Common Subsections
-    'Hypotheses',
-    'Hypothesis',
-    'Findings',
-    'Finding 1',
-    'Finding 2',
-    'Finding 3',
+    # Specific Findings Patterns (unique to findings docs)
+    'Finding 1:',
+    'Finding 2:',
+    'Finding 3:',
+    'Key Finding 1',
+    'Key Finding 2',
     
-    # Analysis & Results
-    'Additional Insights',
-    'Additional insights',
-    'Recommendations',
-    'Next Steps',
-    'Next steps',
-    'Further Research Needed',
-    'Further research needed',
-    
-    # Methods & Study Details
-    'Who we talked to',
-    'Who We Talked To',
-    'Tools used for synthesis',
-    'Appendix',
-    
-    # Common Elements
+    # Participant Quotes (formatted uniquely in findings)
     '_Quotes_',
-    'Quotes',
-    '> "',  # Quote marker
+    '> "',  # Quote marker followed by actual participant quote
+    '_"',   # Quote in italics
     
-    # Demographics/Recruitment 
-    'Recruitment criteria',
-    'Study Recruitment',
-    'Demographics',
-    'Audience segment',
+    # Post-Study Elements (never in guides)
+    'Research Findings for',
+    'Findings from',
+    'Study Findings',
+    'Findings Summary',
     
-    # Research Context
-    'Research Background',
-    'Background',
-    'Research goals',
-    'Study goals'
+    # Analysis-Specific Headers (unique to findings)
+    'Recommendations',
+    'Critical Recommendations',
+    'Additional Insights',
+    'Further Research Needed',
+    
+    # Results Reporting (not in guides)
+    'What we learned',
+    'What we found',
+    'Key takeaways',
+    
+    # Synthesis Elements (unique to completed research)
+    'Tools used for synthesis',
+    'Synthesis approach',
+    'Analysis methods',
+    
+    # Post-Study Demographics (not in guides)
+    'Who we talked to',
+    'Study demographics',
+    'Participant demographics'
 ]
