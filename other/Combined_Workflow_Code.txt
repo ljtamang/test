@@ -1,120 +1,65 @@
-{
-    "repository": {
-        "repo_name": "va.gov-team",
-        "repo_url": "https://github.com/department-of-veterans-affairs/va.gov-team",
-        "branch": "main",
-        "sparse_checkout_paths": ["products"]
-    },
-    "processing": {
-        "target_file_types": [
-            "md",
-            "markdown"
-        ]
-    },
-    "storage": {
-        "blob_storage_path": "/dbfs/mnt/blob/bronze/raw-data",
-        "metadata_file": "/dbfs/mnt/blob/raw/bronze/metadata/metadata.json"
-    }
-}
-
-------------
-
-import json
-
-def load_json(config_path: str) -> dict:
-    """
-    Load and parse a JSON configuration file.
-
-    Args:
-        config_path (str): Path to the JSON configuration file
-
-    Returns:
-        dict: Parsed JSON configuration as a dictionary
-
-    Raises:
-        FileNotFoundError: If the configuration file does not exist
-        json.JSONDecodeError: If the configuration file is not valid JSON
-    """
-    with open(config_path, 'r') as f:
-        return json.load(f)
-
-
--------------
-
 import os
-import shutil
-import subprocess
-from typing import List
+from typing import List, Dict
+from pathlib import Path
 
-def sparse_checkout(
-    repo_url: str,
-    local_path: str,
-    sparse_checkout_paths: List[str],
-    branch: str = "main"
-) -> bool:
+def list_files_by_extensions(
+    base_path: str,
+    target_extensions: List[str],
+    recursive: bool = True
+) -> List[Dict[str, str]]:
     """
-    Perform a sparse checkout of specific folders from a git repository.
-
+    Lists all files with specified extensions in the given directory.
+    
     Args:
-        repo_url (str): URL of the git repository to clone
-        local_path (str): Local path where the repository should be cloned
-        sparse_checkout_paths (List[str]): List of paths to include in sparse checkout
-        branch (str, optional): Branch to checkout. Defaults to "main"
-
+        base_path (str): Base directory path to start searching from
+        target_extensions (List[str]): List of file extensions to search for (e.g., ['.md', '.txt'])
+        recursive (bool): Whether to search recursively in subdirectories (default: True)
+    
     Returns:
-        bool: True if checkout was successful, False otherwise
-
-    Raises:
-        subprocess.SubprocessError: If any git command fails
-        OSError: If directory operations fail
+        List[Dict[str, str]]: List of dictionaries containing file information
+            Each dictionary contains:
+            - 'file_name': Name of the file
+            - 'file_path': Full path to the file
     """
+    # Normalize extensions (ensure they start with '.' and are lowercase)
+    target_extensions = [ext.lower() if ext.startswith('.') else f'.{ext.lower()}' 
+                        for ext in target_extensions]
+    
+    found_files = []
+    base_path = Path(base_path)
+    
     try:
-        if os.path.exists(local_path):
-            print(f"Repository existed at {local_path} - deleted")
-            shutil.rmtree(local_path)
+        # Define the pattern based on recursive flag
+        pattern = '**/*' if recursive else '*'
         
-        print(f"Starting to clone repository: {repo_url}")
-        
-        os.makedirs(local_path)
-        subprocess.run(['git', 'init'], cwd=local_path, check=True)
-        subprocess.run(['git', 'remote', 'add', 'origin', repo_url], cwd=local_path, check=True)
-        subprocess.run(['git', 'config', 'core.sparseCheckout', 'true'], cwd=local_path, check=True)
-        
-        sparse_checkout_path = os.path.join(local_path, '.git', 'info', 'sparse-checkout')
-        with open(sparse_checkout_path, 'w') as f:
-            for path in sparse_checkout_paths:
-                f.write(f"{path}/*\n")
-        
-        subprocess.run(['git', 'pull', 'origin', branch], cwd=local_path, check=True)
-        print(f"Successfully cloned repository {repo_url} ({branch} branch) to {local_path}")
-        return True
-        
+        # Iterate through all files
+        for file_path in base_path.glob(pattern):
+            if file_path.is_file() and file_path.suffix.lower() in target_extensions:
+                found_files.append({
+                    'file_name': file_path.name,
+                    'file_path': str(file_path.absolute())
+                })
+                
+        return found_files
+    
     except Exception as e:
-        print(f"Error during sparse checkout: {str(e)}")
-        return False
+        print(f"Error while listing files: {str(e)}")
+        return []
 
 
+---------
 
-------------
+# Import the function from file_helper
+from file_helper import list_files_by_extensions
 
-# Databricks notebook source
-from file_io_helper import load_json
-from git_helper import sparse_checkout
+# Define the base path (products folder in your cloned repo)
+products_path = "/tmp/va.gov-team/products"
 
-# Load configuration
-config = load_json("bronze_config.json")
+# Define target extensions
+target_extensions = ['.md']
 
-# Extract parameters
-repo_config = config["repository"]
-repo_url = repo_config["repo_url"]
-local_path = f"/tmp/{repo_config['repo_name']}"
-sparse_checkout_paths = repo_config["sparse_checkout_paths"]
-branch = repo_config["branch"]
-
-# Perform sparse checkout
-success = sparse_checkout(
-    repo_url=repo_url,
-    local_path=local_path,
-    sparse_checkout_paths=sparse_checkout_paths,
-    branch=branch
+# Get list of markdown files
+markdown_files = list_files_by_extensions(
+    base_path=products_path,
+    target_extensions=target_extensions
 )
