@@ -1,83 +1,115 @@
+{
+    "repository": {
+        "repo_name": "va.gov-team",
+        "repo_url": "https://github.com/department-of-veterans-affairs/va.gov-team",
+        "branch": "main",
+        "target_folders": ["products"]
+    },
+    "storage": {
+        "blob_storage_path": "/dbfs/mnt/blob/bronze/raw-data",
+        "metadata_file": "/dbfs/mnt/blob/raw/bronze/metadata/metadata.json"
+    }
+}
 
-# Combined Workflow Code
 
-## Code Snippet
+------------
 
-```python
+import json
+
+def load_json(config_path: str) -> dict:
+    """
+    Load and parse a JSON configuration file.
+
+    Args:
+        config_path (str): Path to the JSON configuration file
+
+    Returns:
+        dict: Parsed JSON configuration as a dictionary
+
+    Raises:
+        FileNotFoundError: If the configuration file does not exist
+        json.JSONDecodeError: If the configuration file is not valid JSON
+    """
+    with open(config_path, 'r') as f:
+        return json.load(f)
+
+
+-------------
+
 import os
 import shutil
 import subprocess
-import pandas as pd
+from typing import List
 
-# Define repository and storage paths
-repo_url = "https://github.com/department-of-veterans-affairs/va.gov-team"
-local_dir = "/tmp/va.gov-team"
-products_dir = os.path.join(local_dir, "products")
-blob_storage_path = "/dbfs/mnt/blob/raw"
-metadata_path = os.path.join(blob_storage_path, "metadata.parquet")
+def sparse_checkout(
+    repo_url: str,
+    local_path: str,
+    target_folders: List[str],
+    branch: str = "main"
+) -> bool:
+    """
+    Perform a sparse checkout of specific folders from a git repository.
 
-# Delete and clone repository
-if os.path.exists(local_dir):
-    shutil.rmtree(local_dir)
-subprocess.run(["git", "clone", repo_url, local_dir], check=True)
+    Args:
+        repo_url (str): URL of the git repository to clone
+        local_path (str): Local path where the repository should be cloned
+        target_folders (List[str]): List of folders to include in sparse checkout
+        branch (str, optional): Branch to checkout. Defaults to "main"
 
-# Load historical metadata
-try:
-    historical_metadata = pd.read_parquet(metadata_path)
-except FileNotFoundError:
-    historical_metadata = pd.DataFrame(columns=["file_name", "commit_hash"])
+    Returns:
+        bool: True if checkout was successful, False otherwise
 
-# List and filter `.md` files
-md_files = [os.path.join(root, file) for root, _, files in os.walk(products_dir) for file in files if file.endswith(".md")]
+    Raises:
+        subprocess.SubprocessError: If any git command fails
+        OSError: If directory operations fail
+    """
+    try:
+        if os.path.exists(local_path):
+            print(f"Repository existed at {local_path} - deleted")
+            shutil.rmtree(local_path)
+        
+        print(f"Starting to clone repository: {repo_url}")
+        
+        os.makedirs(local_path)
+        subprocess.run(['git', 'init'], cwd=local_path, check=True)
+        subprocess.run(['git', 'remote', 'add', 'origin', repo_url], cwd=local_path, check=True)
+        subprocess.run(['git', 'config', 'core.sparseCheckout', 'true'], cwd=local_path, check=True)
+        
+        sparse_checkout_path = os.path.join(local_path, '.git', 'info', 'sparse-checkout')
+        with open(sparse_checkout_path, 'w') as f:
+            for folder in target_folders:
+                f.write(f"{folder}/*\n")
+        
+        subprocess.run(['git', 'pull', 'origin', branch], cwd=local_path, check=True)
+        print(f"Successfully cloned repository {repo_url} ({branch} branch) to {local_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Error during sparse checkout: {str(e)}")
+        return False
 
-# Extract current metadata
-def get_file_metadata(file_path):
-    # Use `git log` for metadata
-    result = subprocess.run(
-        ["git", "log", "-1", "--pretty=format:%H,%ci", "--", file_path],
-        cwd=local_dir,
-        capture_output=True,
-        text=True
-    )
-    commit_hash, commit_date = result.stdout.split(',')
-    file_size = os.path.getsize(file_path)
-    return {
-        "file_name": os.path.relpath(file_path, products_dir),
-        "file_path": file_path,
-        "file_size": file_size,
-        "file_type": "md",
-        "commit_hash": commit_hash,
-        "commit_date": commit_date.strip(),
-    }
 
-current_metadata = [get_file_metadata(file) for file in md_files]
 
-# Compare metadata
-historical_files = set(historical_metadata["file_name"])
-new_or_updated_files = []
+------------
 
-for metadata in current_metadata:
-    file_name = metadata["file_name"]
-    if file_name not in historical_files:
-        metadata["is_new"] = True
-        metadata["is_updated"] = False
-    else:
-        historical_commit = historical_metadata.loc[historical_metadata["file_name"] == file_name, "commit_hash"].iloc[0]
-        if metadata["commit_hash"] != historical_commit:
-            metadata["is_new"] = False
-            metadata["is_updated"] = True
-        else:
-            metadata["is_new"] = False
-            metadata["is_updated"] = False
-    new_or_updated_files.append(metadata)
+# Databricks notebook source
+from file_io_helper import load_json
+from git_helper import sparse_checkout
 
-# Save new or updated files
-for metadata in new_or_updated_files:
-    if metadata["is_new"] or metadata["is_updated"]:
-        dest_path = os.path.join(blob_storage_path, os.path.basename(metadata["file_path"]))
-        shutil.copy(metadata["file_path"], dest_path)
+# Load configuration
+config = load_json("bronze_config.json")
 
-# Update metadata
-updated_metadata = pd.DataFrame(new_or_updated_files)
-updated_metadata.to_parquet(metadata_path, index=False)
-```
+# Extract parameters
+repo_config = config["repository"]
+repo_url = repo_config["repo_url"]
+local_path = f"/tmp/{repo_config['repo_name']}"
+target_folders = repo_config["target_folders"]
+branch = repo_config["branch"]
+
+# Perform sparse checkout
+success = sparse_checkout(
+    repo_url=repo_url,
+    local_path=local_path,
+    target_folders=target_folders,
+    branch=branch
+)
