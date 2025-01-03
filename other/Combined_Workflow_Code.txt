@@ -1,38 +1,57 @@
-path_keywords = [
-    # Primary research-related folders
+filename_keywords = [
+    # Core research terms
     'research',
-    'research-design',
-    'discovery',
-    
-    # Common subfolder patterns
-    'user-research',
-    'user-testing',
-    'usability',
-    'usability-testing',
-    'usability-study',
-    
-    # Research type folders
-    'interviews',
-    'study',
-    'testing',
-    'discovery-sprints',
-    
-    # Research phase indicators
-    'exploratory',
-    'evaluative',
-    'generative',
-    
-    # Specific research contexts
-    'user-testing',
-    'uat',  # User Acceptance Testing
-    'accessibility',
-    
-    # Time-based research folders
-    'pre-discovery',
-    'post-mvp',
-    
-    # Analysis folders
     'findings',
+    'finding',
+    'report',
+    
+    # Common combinations
+    'research-findings',
+    'research findings',
+    'research-report',
+    'research report',
+    'research summary',
+    'research-summary',
+    'findings report',
+    
+    # Report variations
+    'readout',
+    'summary',
     'synthesis',
-    'analysis'
+    
+    # Research types
+    'discovery',
+    'usability',
+    'analytics',
+    'analysis',
+    
+    # Specific research formats
+    'researchstudy',
+    'research study',
+    'userresearch',
+    'user research',
+    
+    # Study indicators
+    'round',
+    'phase',
+    'test',
+    
+    # Common prefixes/suffixes
+    'pre-discovery',
+    'prediscovery',
+    
+    # Result indicators
+    'results',
+    'recommendations',
+    
+    # Specific document types
+    'research share',
+    'research share out',
+    'research readout',
+    'research review',
+    
+    # Additional patterns seen
+    'unmoderated research',
+    'identity research',
+    'content research',
 ]
