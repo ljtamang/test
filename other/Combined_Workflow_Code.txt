@@ -1,41 +1,38 @@
-2023-09-secondary-research-accredited-representation-management.md
-research-report.md
-research-findings.md
-Findings.md
-Prefill Research Report 09_2024.md
-beta_test_synthesis_2021.md
-research findings.md
-research-findings-01.31.2019.md
-topline summary_research findings.md
-11-2023-family-hub-research-findings.md
-pre-discovery-research.md
-research-findings-r1.md
-526 Landing Pages Redesign Research Findings.pdf
-heuristic-review-summary-of-finding.md
-research-summary.md
-researchreport.md
-ITF Research Summary.md
-2023-10 Research Findings.md
-8940-userresearch-findingsnotes.pdf
-Findings 526 Usability Test Aug 2021.pdf
-PACT-Act-research-report.md
-2023-07-max-CFI-report.md
-2024-01-Max-CFI-Refinements-Report.md
-session-report.md
-Research-findings-test2.md
-BDD-research-findings.md
-design-discovery.md
-key-findings-9-28-16.md
-key-research-findings.md
-research-readout.md
-CLC-DISCOVERY-FINDINGS.md
-9.29researchfindings.md
-user-research-findings.md
-esearch-findings.md
-research-findings-add-01.md
-2020-yellow-ribbon-research-findings.pptx
-research-findings-phases1&2.md
-Research-Findings-Round1.md
-research-report-round1.md
-round 1 Research Findings Report.md
-Research Finding.md
+path_keywords = [
+    # Primary research-related folders
+    'research',
+    'research-design',
+    'discovery',
+    
+    # Common subfolder patterns
+    'user-research',
+    'user-testing',
+    'usability',
+    'usability-testing',
+    'usability-study',
+    
+    # Research type folders
+    'interviews',
+    'study',
+    'testing',
+    'discovery-sprints',
+    
+    # Research phase indicators
+    'exploratory',
+    'evaluative',
+    'generative',
+    
+    # Specific research contexts
+    'user-testing',
+    'uat',  # User Acceptance Testing
+    'accessibility',
+    
+    # Time-based research folders
+    'pre-discovery',
+    'post-mvp',
+    
+    # Analysis folders
+    'findings',
+    'synthesis',
+    'analysis'
+]
