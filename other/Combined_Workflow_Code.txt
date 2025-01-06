@@ -1,43 +1,83 @@
-# Algorithm for Identifying Research Findings from Files
+from typing import List, Dict, Tuple
+import os
+import json
+import subprocess
+from datetime import datetime
 
-## Scoring Criteria
+def get_git_info(file_path: str) -> Tuple[str, str]:
+    """
+    Get the latest git commit hash and date for a file
+    
+    Args:
+        file_path (str): Path to the file
+        
+    Returns:
+        Tuple[str, str]: (commit_hash, commit_date)
+    """
+    try:
+        # Get the last commit hash
+        hash_cmd = ['git', 'log', '-n', '1', '--pretty=format:%H', '--', file_path]
+        commit_hash = subprocess.run(hash_cmd, capture_output=True, text=True, check=True).stdout
+        
+        # Get the last commit date
+        date_cmd = ['git', 'log', '-n', '1', '--pretty=format:%cI', '--', file_path]
+        commit_date = subprocess.run(date_cmd, capture_output=True, text=True, check=True).stdout
+        
+        return commit_hash, commit_date
+    except subprocess.CalledProcessError:
+        # Return placeholder values if git commands fail
+        return "no_git_info", datetime.now().isoformat()
 
-A file is scored based on several criteria, with a minimum score of 4 needed to be classified as a research finding:
-
-### Major Deductions
-1. **-8 points** if the filename contains the words `"plan"` or `"guide"` (automatically disqualifies the file).
-
-### Filename Score
-1. **+1 point** if any keyword is found in the filename.
-2. **Additional +2 points** if one of the first three priority keywords is found: `"research"`, `"findings"`, or `"report"`.
-
-### Content Score (for non-PDF files)
-1. **+1 point** if any content marker is found in the file.
-2. **Additional +2 points** if one of the first three priority markers is found: `"Research Findings"`, `"Study Results"`, or `"Research Goals"`.
-
-### Path Score
-1. **+1 point** for each matching keyword found in the file path.
-
-## Classification Rules
-
-1. **Files scoring ≥ 4 points** are classified as research findings.
-2. **Files with priority matches** in both the filename and content will always qualify (minimum **6 points**).
-3. **Files with "plan" or "guide"** in the filename will never qualify (maximum possible score would be negative due to the **-8 deduction**).
-
-## Example Scenarios
-
-1. **File Name:** `research_findings.md`
-   - **Filename Score:** +3 (priority keyword match)
-   - **Content Score:** +3 (priority content marker match)
-   - **Total Score:** 6 points → **Is a finding**.
-
-2. **File Name:** `project_plan.md`
-   - **Filename Score:** -8 (contains "plan")
-   - **Content Score:** Possible matches
-   - **Total Score:** Negative → **Not a finding**.
-
-3. **File Name:** `summary_notes.md`
-   - **Filename Score:** +1 (generic match)
-   - **Content Score:** +1 (generic content marker match)
-   - **Path Score:** Depends on matching keywords
-   - **Total Score:** Depends on total → **Maybe a finding**.
+def enrich_file_metadata(files: List[Dict[str, str]]) -> List[Dict]:
+    """
+    Enriches file information with additional metadata including git information.
+    
+    Args:
+        files (List[Dict[str, str]]): List of dictionaries containing file information
+            with at least 'file_path' key
+            
+    Returns:
+        List[Dict]: Enhanced list of dictionaries with additional metadata:
+            - file_size: Size of file in bytes
+            - file_type: File extension
+            - commit_hash: Git commit hash of last change
+            - commit_date: Date of last git commit
+            - is_new: Flag indicating if file is new (True)
+            - is_updated: Flag indicating if file was updated (False)
+    """
+    enriched_files = []
+    
+    for file_info in files:
+        try:
+            file_path = file_info['file_path']
+            
+            # Get file size
+            file_size = os.path.getsize(file_path)
+            
+            # Get file type from extension
+            file_type = os.path.splitext(file_path)[1].lstrip('.').lower()
+            if not file_type:
+                file_type = 'unknown'
+            
+            # Get git information
+            commit_hash, commit_date = get_git_info(file_path)
+            
+            # Create enriched file info dictionary
+            enriched_info = {
+                **file_info,  # Include all existing information
+                'file_size': file_size,
+                'file_type': file_type,
+                'commit_hash': commit_hash,
+                'commit_date': commit_date,
+                'is_new': True,
+                'is_updated': False
+            }
+            
+            enriched_files.append(enriched_info)
+            
+        except Exception as e:
+            print(f"Error enriching metadata for {file_info.get('file_path', 'unknown file')}: {str(e)}")
+            # Include original file info without enrichment if there's an error
+            enriched_files.append(file_info)
+    
+    return json.dumps(enriched_files, indent=2)
