@@ -1,35 +1,16 @@
-def identify_research_files(
-    files: List[Dict[str, str]],
-    filename_keywords: List[str] = None,
-    path_keywords: List[str] = None,
-    content_markers: List[str] = None,
-    min_score: int = 2
-) -> List[Dict[str, str]]:
-    """
-    Identifies research finding files based on multiple criteria.
-    
-    Args:
-        files (List[Dict[str, str]]): List of file information dictionaries
-        filename_keywords (List[str]): Keywords to look for in filenames
-            - Adds 1 point if any keyword is found
-            - Adds additional 2 points if any of first three keywords are found
-        path_keywords (List[str]): Keywords to look for in file paths
-        content_markers (List[str]): Content markers to look for
-            - Adds 1 point if any marker is found
-            - Adds additional 2 points if any of first three markers are found
-        min_score (int): Minimum score required to classify as research file
-    
-    Returns:
-        List[Dict[str, str]]: List of files identified as research findings
-    """
-    # [Previous default keywords code remains the same]
-
     research_files = []
     
     for file_info in files:
         score = 0
         file_path = file_info['file_path']
         normalized_filename = normalize_filename(file_info['file_name'])
+        
+        # Check for score deductions first
+        negative_keywords = ['plan', 'guide']
+        for neg_keyword in negative_keywords:
+            if neg_keyword in normalized_filename:
+                score -= 8  # Higher deduction for stronger exclusion
+                break
         
         # Check filename keywords
         found_any_keyword = False
@@ -77,8 +58,8 @@ def identify_research_files(
                 score += 2
             
         # Add additional metadata to file_info
-        file_info['research_score'] = score
-        file_info['is_research'] = score >= min_score
+        file_info['findings_score'] = score
+        file_info['is_findings'] = score >= min_score
         file_info['matched_criteria'] = []
         
         if score >= min_score:
