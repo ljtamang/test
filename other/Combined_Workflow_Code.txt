@@ -1,14 +1,87 @@
-def contains_words(file_name, words):
+def identify_research_files(
+    files: List[Dict[str, str]],
+    filename_keywords: List[str] = None,
+    path_keywords: List[str] = None,
+    content_markers: List[str] = None,
+    min_score: int = 2
+) -> List[Dict[str, str]]:
     """
-    Check if the file_name contains all the specified words.
+    Identifies research finding files based on multiple criteria.
     
-    :param file_name: The name of the file (string)
-    :param words: A list of words to check for in the file_name
-    :return: True if all words are found, False otherwise
+    Args:
+        files (List[Dict[str, str]]): List of file information dictionaries
+        filename_keywords (List[str]): Keywords to look for in filenames
+            - Adds 1 point if any keyword is found
+            - Adds additional 2 points if any of first three keywords are found
+        path_keywords (List[str]): Keywords to look for in file paths
+        content_markers (List[str]): Content markers to look for
+            - Adds 1 point if any marker is found
+            - Adds additional 2 points if any of first three markers are found
+        min_score (int): Minimum score required to classify as research file
+    
+    Returns:
+        List[Dict[str, str]]: List of files identified as research findings
     """
-    file_name_lower = file_name.lower()
-    return all(word.lower() in file_name_lower for word in words)
+    # [Previous default keywords code remains the same]
 
-# Example usage
-file_name = "Project_Guide_and_Plan.pdf"
-words_to_check = ["guide", "plan"]
+    research_files = []
+    
+    for file_info in files:
+        score = 0
+        file_path = file_info['file_path']
+        normalized_filename = normalize_filename(file_info['file_name'])
+        
+        # Check filename keywords
+        found_any_keyword = False
+        found_priority_keyword = False
+        
+        for i, keyword in enumerate(filename_keywords):
+            normalized_keyword = normalize_filename(keyword)
+            if normalized_keyword in normalized_filename:
+                found_any_keyword = True
+                if i < 3:  # Check if it's one of first three keywords
+                    found_priority_keyword = True
+                    break
+                
+        if found_any_keyword:
+            score += 1
+        if found_priority_keyword:
+            score += 2
+                
+        # Check path keywords
+        normalized_path = normalize_filename(file_path)
+        for keyword in path_keywords:
+            normalized_keyword = normalize_filename(keyword)
+            if normalized_keyword in normalized_path:
+                score += 1
+        
+        # Check content markers only for non-PDF files for now
+        if not file_path.lower().endswith('.pdf'):
+            content = read_file_content(file_path)
+            normalized_content = content.lower()
+            
+            found_any_marker = False
+            found_priority_marker = False
+            
+            # Check content markers
+            for i, marker in enumerate(content_markers):
+                if marker.lower() in normalized_content:
+                    found_any_marker = True
+                    if i < 3:  # Check if it's one of first three markers
+                        found_priority_marker = True
+                        break
+            
+            if found_any_marker:
+                score += 1
+            if found_priority_marker:
+                score += 2
+            
+        # Add additional metadata to file_info
+        file_info['research_score'] = score
+        file_info['is_research'] = score >= min_score
+        file_info['matched_criteria'] = []
+        
+        if score >= min_score:
+            research_files.append(file_info)
+    
+    return research_files
