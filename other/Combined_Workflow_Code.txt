@@ -1,68 +1,43 @@
-    research_files = []
-    
-    for file_info in files:
-        score = 0
-        file_path = file_info['file_path']
-        normalized_filename = normalize_filename(file_info['file_name'])
-        
-        # Check for score deductions first
-        negative_keywords = ['plan', 'guide']
-        for neg_keyword in negative_keywords:
-            if neg_keyword in normalized_filename:
-                score -= 8  # Higher deduction for stronger exclusion
-                break
-        
-        # Check filename keywords
-        found_any_keyword = False
-        found_priority_keyword = False
-        
-        for i, keyword in enumerate(filename_keywords):
-            normalized_keyword = normalize_filename(keyword)
-            if normalized_keyword in normalized_filename:
-                found_any_keyword = True
-                if i < 3:  # Check if it's one of first three keywords
-                    found_priority_keyword = True
-                    break
-                
-        if found_any_keyword:
-            score += 1
-        if found_priority_keyword:
-            score += 2
-                
-        # Check path keywords
-        normalized_path = normalize_filename(file_path)
-        for keyword in path_keywords:
-            normalized_keyword = normalize_filename(keyword)
-            if normalized_keyword in normalized_path:
-                score += 1
-        
-        # Check content markers only for non-PDF files for now
-        if not file_path.lower().endswith('.pdf'):
-            content = read_file_content(file_path)
-            normalized_content = content.lower()
-            
-            found_any_marker = False
-            found_priority_marker = False
-            
-            # Check content markers
-            for i, marker in enumerate(content_markers):
-                if marker.lower() in normalized_content:
-                    found_any_marker = True
-                    if i < 3:  # Check if it's one of first three markers
-                        found_priority_marker = True
-                        break
-            
-            if found_any_marker:
-                score += 1
-            if found_priority_marker:
-                score += 2
-            
-        # Add additional metadata to file_info
-        file_info['findings_score'] = score
-        file_info['is_findings'] = score >= min_score
-        file_info['matched_criteria'] = []
-        
-        if score >= min_score:
-            research_files.append(file_info)
-    
-    return research_files
+# Algorithm for Identifying Research Findings from Files
+
+## Scoring Criteria
+
+A file is scored based on several criteria, with a minimum score of 4 needed to be classified as a research finding:
+
+### Major Deductions
+1. **-8 points** if the filename contains the words `"plan"` or `"guide"` (automatically disqualifies the file).
+
+### Filename Score
+1. **+1 point** if any keyword is found in the filename.
+2. **Additional +2 points** if one of the first three priority keywords is found: `"research"`, `"findings"`, or `"report"`.
+
+### Content Score (for non-PDF files)
+1. **+1 point** if any content marker is found in the file.
+2. **Additional +2 points** if one of the first three priority markers is found: `"Research Findings"`, `"Study Results"`, or `"Research Goals"`.
+
+### Path Score
+1. **+1 point** for each matching keyword found in the file path.
+
+## Classification Rules
+
+1. **Files scoring ≥ 4 points** are classified as research findings.
+2. **Files with priority matches** in both the filename and content will always qualify (minimum **6 points**).
+3. **Files with "plan" or "guide"** in the filename will never qualify (maximum possible score would be negative due to the **-8 deduction**).
+
+## Example Scenarios
+
+1. **File Name:** `research_findings.md`
+   - **Filename Score:** +3 (priority keyword match)
+   - **Content Score:** +3 (priority content marker match)
+   - **Total Score:** 6 points → **Is a finding**.
+
+2. **File Name:** `project_plan.md`
+   - **Filename Score:** -8 (contains "plan")
+   - **Content Score:** Possible matches
+   - **Total Score:** Negative → **Not a finding**.
+
+3. **File Name:** `summary_notes.md`
+   - **Filename Score:** +1 (generic match)
+   - **Content Score:** +1 (generic content marker match)
+   - **Path Score:** Depends on matching keywords
+   - **Total Score:** Depends on total → **Maybe a finding**.
