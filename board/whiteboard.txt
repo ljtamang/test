@@ -1,0 +1,85 @@
+import os
+import shutil
+import subprocess
+from typing import List
+
+def sparse_checkout(
+    repo_url: str,
+    local_path: str,
+    sparse_checkout_paths: List[str],
+    branch: str = "main"
+) -> bool:
+    """
+    Perform a sparse checkout of specific folders from a git repository.
+    If repository exists, it will update. If it doesn't exist, it will create a new one.
+
+    Args:
+        repo_url (str): URL of the git repository to clone
+        local_path (str): Local path where the repository should be cloned
+        sparse_checkout_paths (List[str]): List of paths to include in sparse checkout
+        branch (str, optional): Branch to checkout. Defaults to "main"
+
+    Returns:
+        bool: True if checkout was successful, False otherwise
+
+    Raises:
+        subprocess.SubprocessError: If any git command fails
+        OSError: If directory operations fail
+    """
+    try:
+        # Check if it's an existing git repository
+        is_existing_repo = os.path.exists(os.path.join(local_path, '.git'))
+        
+        if is_existing_repo:
+            print(f"Repository exists at {local_path} - updating")
+            
+            # Fetch the latest changes
+            subprocess.run(['git', 'fetch', 'origin'], cwd=local_path, check=True)
+            
+            # Update sparse-checkout paths
+            sparse_checkout_path = os.path.join(local_path, '.git', 'info', 'sparse-checkout')
+            with open(sparse_checkout_path, 'w') as f:
+                for path in sparse_checkout_paths:
+                    f.write(f"{path}/*\n")
+            
+            # Reset to the latest state of the branch
+            subprocess.run(['git', 'checkout', branch], cwd=local_path, check=True)
+            subprocess.run(['git', 'reset', '--hard', f'origin/{branch}'], cwd=local_path, check=True)
+            print(f"Successfully updated repository {repo_url} ({branch} branch) at {local_path}")
+            
+        else:
+            print(f"Starting to clone repository: {repo_url}")
+            os.makedirs(local_path, exist_ok=True)
+            
+            # Initialize new repository with specified branch
+            subprocess.run(['git', 'init', '-b', branch], cwd=local_path, check=True)
+            subprocess.run(['git', 'remote', 'add', 'origin', repo_url], cwd=local_path, check=True)
+            subprocess.run(['git', 'config', 'core.sparseCheckout', 'true'], cwd=local_path, check=True)
+
+            # Set up sparse checkout paths
+            sparse_checkout_path = os.path.join(local_path, '.git', 'info', 'sparse-checkout')
+            with open(sparse_checkout_path, 'w') as f:
+                for path in sparse_checkout_paths:
+                    f.write(f"{path}/*\n")
+
+            # Pull the repository
+            subprocess.run(['git', 'pull', 'origin', branch], cwd=local_path, check=True)
+            print(f"Successfully cloned repository {repo_url} ({branch} branch) to {local_path}")
+
+        return True
+
+    except Exception as e:
+        print(f"Error during sparse checkout: {str(e)}")
+        return False
+
+    finally:
+        # Ensure sparse checkout is enabled (in case of existing repo)
+        if os.path.exists(local_path):
+            try:
+                subprocess.run(
+                    ['git', 'config', 'core.sparseCheckout', 'true'],
+                    cwd=local_path,
+                    check=True
+                )
+            except Exception as e:
+                print(f"Warning: Failed to ensure sparse checkout configuration: {str(e)}")
