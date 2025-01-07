@@ -1,6 +1,7 @@
 def save_metadata_to_blob(metadata_list: List[Dict], save_path: str) -> None:
     """
     Save the enriched metadata to a JSON file in the mounted blob storage.
+    Creates directories if they don't exist and replaces existing file.
     
     Args:
         metadata_list (List[Dict]): List of dictionaries containing enriched metadata
@@ -8,13 +9,22 @@ def save_metadata_to_blob(metadata_list: List[Dict], save_path: str) -> None:
             e.g., '/mnt/blob-storage/metadata/file_metadata.json'
     """
     try:
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        # Create directory path if it doesn't exist
+        directory = os.path.dirname(save_path)
+        if not os.path.exists(directory):
+            print(f"Creating directory: {directory}")
+            os.makedirs(directory, exist_ok=True)
+        
+        # Delete existing file if it exists
+        if os.path.exists(save_path):
+            print(f"Removing existing file: {save_path}")
+            os.remove(save_path)
         
         # Convert to JSON string with proper formatting
         json_data = json.dumps(metadata_list, indent=2, default=str)
         
-        # Write to file
+        # Write new file
+        print(f"Writing new metadata file to: {save_path}")
         with open(save_path, 'w') as f:
             f.write(json_data)
             
