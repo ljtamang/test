@@ -1,85 +1,98 @@
 import os
-import shutil
-import subprocess
-from typing import List
+from typing import List, Optional
 
-def sparse_checkout(
-    repo_url: str,
-    local_path: str,
-    sparse_checkout_paths: List[str],
-    branch: str = "main"
-) -> bool:
+def list_files(directory: str, file_types: Optional[List[str]] = None) -> List[str]:
     """
-    Perform a sparse checkout of specific folders from a git repository.
-    If repository exists, it will update. If it doesn't exist, it will create a new one.
-
+    Get a list of all files in the given directory and its subdirectories.
+    
     Args:
-        repo_url (str): URL of the git repository to clone
-        local_path (str): Local path where the repository should be cloned
-        sparse_checkout_paths (List[str]): List of paths to include in sparse checkout
-        branch (str, optional): Branch to checkout. Defaults to "main"
-
+        directory (str): The root directory path to start searching from
+        file_types (Optional[List[str]]): List of file extensions to filter by.
+            Extensions can be provided with or without the leading dot (e.g., ['.txt', 'py'])
+            If None, all files will be included.
+    
     Returns:
-        bool: True if checkout was successful, False otherwise
-
-    Raises:
-        subprocess.SubprocessError: If any git command fails
-        OSError: If directory operations fail
-    """
-    try:
-        # Check if it's an existing git repository
-        is_existing_repo = os.path.exists(os.path.join(local_path, '.git'))
+        List[str]: A list of full file paths
         
-        if is_existing_repo:
-            print(f"Repository exists at {local_path} - updating")
+    Raises:
+        FileNotFoundError: If the directory doesn't exist
+        ValueError: If the file_types argument is invalid or not a list
+        TypeError: If file_types is provided but not as a list
+    """
+    # Input validation
+    if not os.path.exists(directory):
+        raise FileNotFoundError(f"Directory not found: {directory}")
+    
+    # Type validation for file_types
+    if file_types is not None:
+        if not isinstance(file_types, list):
+            raise TypeError(
+                "file_types must be a list of strings. "
+                f"Got {type(file_types).__name__} instead."
+            )
+        
+        # Normalize extensions: remove leading dots if present and convert to lowercase
+        file_types = [
+            ft.lower().lstrip('.') for ft in file_types
+        ]
+        
+        # Validate that we have non-empty strings
+        invalid_types = [ft for ft in file_types if not isinstance(ft, str) or not ft]
+        if invalid_types:
+            raise ValueError(
+                f"All file types must be non-empty strings. Invalid values: {invalid_types}"
+            )
+    
+    file_list = []
+    
+    # Walk through directory
+    for root, _, files in os.walk(directory):
+        for file in files:
+            full_path = os.path.join(root, file)
             
-            # Fetch the latest changes
-            subprocess.run(['git', 'fetch', 'origin'], cwd=local_path, check=True)
-            
-            # Update sparse-checkout paths
-            sparse_checkout_path = os.path.join(local_path, '.git', 'info', 'sparse-checkout')
-            with open(sparse_checkout_path, 'w') as f:
-                for path in sparse_checkout_paths:
-                    f.write(f"{path}/*\n")
-            
-            # Reset to the latest state of the branch
-            subprocess.run(['git', 'checkout', branch], cwd=local_path, check=True)
-            subprocess.run(['git', 'reset', '--hard', f'origin/{branch}'], cwd=local_path, check=True)
-            print(f"Successfully updated repository {repo_url} ({branch} branch) at {local_path}")
-            
-        else:
-            print(f"Starting to clone repository: {repo_url}")
-            os.makedirs(local_path, exist_ok=True)
-            
-            # Initialize new repository with specified branch
-            subprocess.run(['git', 'init', '-b', branch], cwd=local_path, check=True)
-            subprocess.run(['git', 'remote', 'add', 'origin', repo_url], cwd=local_path, check=True)
-            subprocess.run(['git', 'config', 'core.sparseCheckout', 'true'], cwd=local_path, check=True)
+            # Apply file type filter if specified
+            if file_types is not None:
+                # Get extension without dot and convert to lowercase
+                file_ext = os.path.splitext(file)[1].lower().lstrip('.')
+                if file_ext in file_types:
+                    file_list.append(full_path)
+            else:
+                file_list.append(full_path)
+    
+    return sorted(file_list)
 
-            # Set up sparse checkout paths
-            sparse_checkout_path = os.path.join(local_path, '.git', 'info', 'sparse-checkout')
-            with open(sparse_checkout_path, 'w') as f:
-                for path in sparse_checkout_paths:
-                    f.write(f"{path}/*\n")
-
-            # Pull the repository
-            subprocess.run(['git', 'pull', 'origin', branch], cwd=local_path, check=True)
-            print(f"Successfully cloned repository {repo_url} ({branch} branch) to {local_path}")
-
-        return True
-
-    except Exception as e:
-        print(f"Error during sparse checkout: {str(e)}")
-        return False
-
-    finally:
-        # Ensure sparse checkout is enabled (in case of existing repo)
-        if os.path.exists(local_path):
-            try:
-                subprocess.run(
-                    ['git', 'config', 'core.sparseCheckout', 'true'],
-                    cwd=local_path,
-                    check=True
-                )
-            except Exception as e:
-                print(f"Warning: Failed to ensure sparse checkout configuration: {str(e)}")
+# Usage examples:
+if __name__ == "__main__":
+    # Example 1: List all files
+    all_files = list_files("./my_directory")
+    print("All files:", all_files)
+    
+    # Example 2: List only Python files
+    python_files = list_files("./my_directory", [".py"])
+    print("\nPython files:", python_files)
+    
+    # Example 3: List only Python files (without dot)
+    python_files_2 = list_files("./my_directory", ["py"])
+    print("\nPython files (alternative):", python_files_2)
+    
+    # Example 4: List multiple file types (mixed format)
+    code_files = list_files("./my_directory", [".py", "js", ".cpp", "txt"])
+    print("\nCode files:", code_files)
+    
+    # Example 5: Error handling for non-list input
+    try:
+        files = list_files("./my_directory", ".py")  # Wrong: string instead of list
+    except TypeError as e:
+        print(f"\nError: {e}")
+    
+    # Example 6: Error handling for invalid list items
+    try:
+        files = list_files("./my_directory", ["py", "", None, 123])  # Invalid items
+    except ValueError as e:
+        print(f"\nError: {e}")
+    
+    # Example 7: Error handling for invalid directory
+    try:
+        files = list_files("./nonexistent_directory", [".txt"])
+    except FileNotFoundError as e:
+        print(f"\nError: {e}")
