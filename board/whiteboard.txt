@@ -1,80 +1,22 @@
+if __name__ == "__main__":
+    # Test the function
+    print("Testing common_utils.py")
+    # Add your test code here
+
+
 # utils/setup_path.py
 import os
 import sys
 from pathlib import Path
 
-def add_project_root_to_path():
-    """Add project root directory to Python path if not already there."""
+def get_project_root():
+    """Get project root path whether run directly or imported."""
     try:
-        current_file = Path(__file__).resolve()
-    except NameError:
-        current_file = Path(os.getcwd())
-    
-    project_root = str(current_file.parent.parent)
-    
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-        return True
-    return False
-
-# Run automatically when this file is executed
-added = add_project_root_to_path()
-
-# utils/__init__.py
-from .file_tagger import tag_file
-from .file_utils import read_file_content
-
-__all__ = ['tag_file', 'read_file_content']
-
-# utils/file_utils.py
-import os
-
-def read_file_content(filepath):
-    """Read and return the content of a file."""
-    if filepath.startswith('/dbfs/'):
-        filepath = filepath.replace('/dbfs/', '/')
-    with open(filepath, 'r') as f:
-        return f.read()
-
-# utils/file_tagger.py
-from utils.file_utils import read_file_content
-
-def tag_file(filepath):
-    """Tag a file based on its content."""
-    content = read_file_content(filepath)
-    # Add tagging logic here
-    return {"tags": ["example_tag"]}
-
-# notebook/main.py (your Databricks notebook)
-# COMMAND ----------
-# First cell: Run setup
-%run /Workspace/your_project_name/utils/setup_path
-
-# COMMAND ----------
-# Second cell: Import modules
-from utils.file_tagger import tag_file
-from utils.file_utils import read_file_content
-
-# COMMAND ----------
-# Third cell: Example usage
-def process_files(file_paths):
-    """Process multiple files and return their tags."""
-    results = {}
-    for filepath in file_paths:
-        try:
-            tags = tag_file(filepath)
-            results[filepath] = tags
-        except Exception as e:
-            results[filepath] = f"Error: {str(e)}"
-    return results
-
-# Example usage
-files_to_process = [
-    '/dbfs/path/to/your/file1.txt',
-    '/dbfs/path/to/your/file2.txt'
-]
-
-results = process_files(files_to_process)
-for file, tags in results.items():
-    print(f"File: {file}")
-    print(f"Tags: {tags}\n")
+        # When running as a notebook/script
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        return project_root
+    except Exception as e:
+        print(f"Error setting up path: {e}")
+        return None
