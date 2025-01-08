@@ -1,7 +1,5 @@
-def ai_based_tagging(file_path: str) -> List[Dict[str, Any]]:
-    """
-    Placeholder for AI-based tagging implementation.
-    """
-    return []
-
-ai_tags': ai_based_tagging(file_path)
+import os, sys
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from utils.file_utils import read_file_content
