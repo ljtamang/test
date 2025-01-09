@@ -1,63 +1,208 @@
-# utils/__init__.py
-from .common_utils import read_file_content, write_file_content, read_json_config
-from .file_tagger import tag_file, save_tagged_file
+from typing import List, Dict, Any
 
-# utils/common_utils.py
-import os
-import sys
-import json
-from pathlib import Path
+def tag_as_research_findings(file_path: str, min_threshold: int = 4) -> List[Dict[str, Any]]:
+    """
+    Tags files as research findings based on scoring criteria.
+    Returns empty list if score is below minimum threshold.
+    
+    Args:
+        file_path: Path to the file
+        min_threshold: Minimum score required for research finding classification
+        
+    Returns:
+        List containing keyword and AI tag dictionaries if classified as research finding,
+        empty list otherwise
+    """
+    score = calculate_research_findings_score(file_path)
+    if score >= min_threshold:
+        return [
+            {'keyword_tag': 'research-finding', 'score': score},
+            {'ai_tag': 'research-finding', 'score': score - 1}
+        ]
+    return []
 
-# Path handling that works both in notebooks and when running directly
-try:
-    # For running as script
-    current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-except NameError:
-    # For running in Databricks notebook
-    current_dir = Path(os.getcwd())
+def calculate_research_findings_score(file_path: str) -> int:
+    """
+    Calculate score for research findings classification.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        Integer score based on keyword matching and other criteria
+    """
+    # Placeholder for actual scoring logic
+    # Implement keyword matching, content analysis, etc.
+    score = 0
+    keywords = ['findings', 'results', 'analysis', 'data']
+    # TODO: Implement actual file reading and keyword counting
+    return score
 
-project_root = current_dir.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+def tag_as_research_plan(file_path: str, min_threshold: int = 4) -> List[Dict[str, Any]]:
+    """
+    Tags files as research plans based on scoring criteria.
+    Returns empty list if score is below minimum threshold.
+    
+    Args:
+        file_path: Path to the file
+        min_threshold: Minimum score required for research plan classification
+        
+    Returns:
+        List containing keyword and AI tag dictionaries if classified as research plan,
+        empty list otherwise
+    """
+    score = calculate_research_plan_score(file_path)
+    if score >= min_threshold:
+        return [
+            {'keyword_tag': 'research-plan', 'score': score},
+            {'ai_tag': 'research-plan', 'score': score - 1}
+        ]
+    return []
 
-def read_file_content(file_path): ...
-def write_file_content(file_path, content): ...
-def read_json_config(config_name): ...
+def calculate_research_plan_score(file_path: str) -> int:
+    """
+    Calculate score for research plan classification.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        Integer score based on keyword matching and other criteria
+    """
+    # Placeholder for actual scoring logic
+    score = 0
+    keywords = ['plan', 'proposal', 'methodology', 'objectives']
+    # TODO: Implement actual file reading and keyword counting
+    return score
 
-# utils/file_tagger.py
-import os
-import sys
-from pathlib import Path
+def tag_as_research_guide(file_path: str, min_threshold: int = 4) -> List[Dict[str, Any]]:
+    """
+    Tags files as research guides based on scoring criteria.
+    Returns empty list if score is below minimum threshold.
+    
+    Args:
+        file_path: Path to the file
+        min_threshold: Minimum score required for research guide classification
+        
+    Returns:
+        List containing keyword and AI tag dictionaries if classified as research guide,
+        empty list otherwise
+    """
+    score = calculate_research_guide_score(file_path)
+    if score >= min_threshold:
+        return [
+            {'keyword_tag': 'research-guide', 'score': score},
+            {'ai_tag': 'research-guide', 'score': score - 1}
+        ]
+    return []
 
-# Path handling that works both in notebooks and when running directly
-try:
-    # For running as script
-    current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-except NameError:
-    # For running in Databricks notebook
-    current_dir = Path(os.getcwd())
+def calculate_research_guide_score(file_path: str) -> int:
+    """
+    Calculate score for research guide classification.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        Integer score based on keyword matching and other criteria
+    """
+    # Placeholder for actual scoring logic
+    score = 0
+    keywords = ['guide', 'manual', 'instructions', 'how-to']
+    # TODO: Implement actual file reading and keyword counting
+    return score
 
-project_root = current_dir.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+def predict_document_class(file_path: str) -> str:
+    """
+    Use AI model to predict document classification.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        Predicted class label as string
+    """
+    # Placeholder for AI model prediction
+    # TODO: Implement actual model loading and inference
+    return "research-finding"  # Example return value
 
-# Now import from utils package
-from utils import common_utils  # This will work in both contexts
+def ai_based_tagging(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Performs AI-based document classification and tagging.
+    Always called regardless of keyword tagging results.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        List containing keyword and AI tag dictionaries
+    """
+    # Run AI model prediction
+    ai_classification = predict_document_class(file_path)
+    ai_score = 3  # Example score, implement actual scoring logic
+    
+    return [
+        {'keyword_tag': 'unclassified', 'score': 4},
+        {'ai_tag': ai_classification, 'score': ai_score}
+    ]
 
-def tag_file(file_path, tag): ...
-def save_tagged_file(file_path, tag, output_path): ...
+def keyword_based_tagging(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Tags files by sequentially applying different keyword-based tagging strategies.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        List containing keyword and AI tag dictionaries
+    """
+    # Try tagging as research findings first
+    tags = tag_as_research_findings(file_path)
+    if tags:
+        return tags
+        
+    # If not research findings, try tagging as research plan
+    tags = tag_as_research_plan(file_path)
+    if tags:
+        return tags
+        
+    # If not research plan, try tagging as research guide
+    tags = tag_as_research_guide(file_path)
+    if tags:
+        return tags
+    
+    # If no other tags apply, mark as unclassified
+    return [
+        {'keyword_tag': 'unclassified', 'score': 4},
+        {'ai_tag': 'unclassified', 'score': 3}
+    ]
 
-# notebooks/bronze_full_ingestion.py
-import os
-import sys
-from pathlib import Path
+def tag_document(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Main tagging function that combines both keyword and AI-based approaches.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        List containing keyword and AI tag dictionaries
+    """
+    # Get keyword-based tags
+    keyword_tags = keyword_based_tagging(file_path)
+    
+    # Get AI-based tag and combine with keyword tags
+    ai_tag = ai_based_tagging(file_path)
+    
+    # If keyword tagging found a classification, use it with AI tag
+    if keyword_tags[0]['keyword_tag'] != 'unclassified':
+        keyword_tags[1] = ai_tag[1]  # Replace the AI tag part
+        return keyword_tags
+    else:
+        # If unclassified by keywords, use AI tags
+        return ai_tag
 
-# Path handling for notebook
-notebook_dir = Path(os.getcwd())
-project_root = notebook_dir.parent
-
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-# Now import from utils package
-from utils import common_utils, file_tagger
+# Example usage
+if __name__ == "__main__":
+    file_path = "example_document.pdf"
+    tags = tag_document(file_path)
+    print(f"Document tags: {tags}")
