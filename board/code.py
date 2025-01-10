@@ -1,3 +1,43 @@
+
+path_keywords = [
+    # Primary research-related folders
+    'research',
+    'research-design',
+    'discovery',
+    
+    # Common subfolder patterns
+    'user-research',
+    'user-testing',
+    'usability',
+    'usability-testing',
+    'usability-study',
+    
+    # Research type folders
+    'interviews',
+    'study',
+    'testing',
+    'discovery-sprints',
+    
+    # Research phase indicators
+    'exploratory',
+    'evaluative',
+    'generative',
+    
+    # Specific research contexts
+    'user-testing',
+    'uat',  # User Acceptance Testing
+    'accessibility',
+    
+    # Time-based research folders
+    'pre-discovery',
+    'post-mvp',
+    
+    # Analysis folders
+    'findings',
+    'synthesis',
+    'analysis'
+]
+
 content_markers = [
     # Strong Results & Analysis Markers (only in findings)
     'Analysis and Findings',
