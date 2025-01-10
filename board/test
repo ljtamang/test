@@ -1,1 +1,5 @@
-
+# Filter files to get only those with research-findings tag
+research_files = [
+    file for file in tag_files 
+    if file["tags"][0]["keyword_tag"] == "research-findings"
+]
