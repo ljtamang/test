@@ -1,125 +1,70 @@
+import os
+from pathlib import Path
 
-path_keywords = [
-    # Primary research-related folders
-    'research',
-    'research-design',
-    'discovery',
+def get_file_metadata(file_path):
+    """
+    Extract file name, path and size from a given file path.
     
-    # Common subfolder patterns
-    'user-research',
-    'user-testing',
-    'usability',
-    'usability-testing',
-    'usability-study',
-    
-    # Research type folders
-    'interviews',
-    'study',
-    'testing',
-    'discovery-sprints',
-    
-    # Research phase indicators
-    'exploratory',
-    'evaluative',
-    'generative',
-    
-    # Specific research contexts
-    'user-testing',
-    'uat',  # User Acceptance Testing
-    'accessibility',
-    
-    # Time-based research folders
-    'pre-discovery',
-    'post-mvp',
-    
-    # Analysis folders
-    'findings',
-    'synthesis',
-    'analysis'
-]
+    Args:
+        file_path (str): The full path to the file
+        
+    Returns:
+        dict: Dictionary containing file name, path and size
+    """
+    try:
+        path_obj = Path(file_path)
+        file_stats = os.stat(file_path)
+        
+        metadata = {
+            'file_name': path_obj.name,
+            'file_path': str(path_obj.absolute()),
+            'file_size_in_bytes': file_stats.st_size
+        }
+        
+        return metadata
+        
+    except FileNotFoundError:
+        return f"Error: File '{file_path}' not found"
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-content_markers = [
-    # Strong Results & Analysis Markers (only in findings)
-    'Analysis and Findings',
-    'Details of Finding',
-    'Study Results',
-    'Research synthesis',
-    'Research Analysis',
+def extract_metadata(file_paths):
+    """
+    Extract metadata for multiple files.
     
-    # Specific Findings Patterns (unique to findings docs)
-    'Finding 1:',
-    'Finding 2:',
-    'Finding 3:',
-    'Key Finding 1',
-    'Key Finding 2',
+    Args:
+        file_paths (list): List of file paths
+        
+    Returns:
+        list: List of dictionaries containing metadata for each file
+    """
+    all_metadata = []
     
-    # Participant Quotes (formatted uniquely in findings)
-    '_Quotes_',
-    '> "',  # Quote marker followed by actual participant quote
-    '_"',   # Quote in italics
+    for file_path in file_paths:
+        metadata = get_file_metadata(file_path)
+        all_metadata.append(metadata)
     
-    # Post-Study Elements (never in guides)
-    'Research Findings for',
-    'Findings from',
-    'Study Findings',
-    'Findings Summary',
+    return all_metadata
+
+# Example usage
+if __name__ == "__main__":
+    # List of example file paths
+    files = [
+        "C:/Users/Documents/report.pdf",
+        "C:/Users/Documents/data.csv",
+        "C:/Users/Pictures/image.jpg"
+    ]
     
-    # Analysis-Specific Headers (unique to findings)
-    'Recommendations',
-    'Critical Recommendations',
-    'Additional Insights',
-    'Further Research Needed',
+    # Get metadata for all files
+    all_files_metadata = extract_metadata(files)
     
-    # Results Reporting (not in guides)
-    'What we learned',
-    'What we found',
-    'Key takeaways',
-    
-    # Synthesis Elements (unique to completed research)
-    'Tools used for synthesis',
-    'Synthesis approach',
-    'Analysis methods',
-    
-    # Post-Study Demographics (not in guides)
-    'Who we talked to',
-    'Study demographics',
-    'Participant demographics'
-# main.py or your notebook
-from file_helper import list_files_by_extensions, identify_research_files
-# First get all markdown files (for now)
-products_path = "/tmp/va.gov-team/products"
-all_files = list_files_by_extensions(
-    base_path=products_path,
-    target_extensions=['.md']  # Only handling markdown files for now
-)
-# Custom content markers specific to your domain
-custom_content_markers = [
-    'Research Findings',
-    'Key Findings',
-    'Methodology',
-    'Executive Summary',
-    'Research Objectives',
-    'Data Analysis',
-    'Survey Results',
-    'User Research',
-    'Research Goals',
-    'Participant Feedback'
-]
-# Identify research files
-research_files = identify_research_files(
-    files=all_files,
-    content_markers=custom_content_markers,
-    min_score=2
-)
-# Display results
-print(f"\nFound {len(research_files)} research files:")
-for file_info in research_files:
-    print(f"\nFile: {file_info['file_name']}")
-    print(f"Path: {file_info['file_path']}")
-    print(f"Research Score: {file_info['research_score']}")
-    print(f"Is Research: {file_info['is_research']}")
+    # Print metadata for each file
+    print("\nMetadata for all files:")
     print("-" * 50)
-# Optional: Save results to a file
-import json
-with open('research_files_analysis.json', 'w') as f:
-    json.dump(research_files, f, indent=2)
+    for idx, metadata in enumerate(all_files_metadata, 1):
+        print(f"\nFile {idx}:")
+        if isinstance(metadata, dict):
+            for key, value in metadata.items():
+                print(f"{key.replace('_', ' ').title()}: {value}")
+        else:
+            print(metadata)  # Print error message if any
