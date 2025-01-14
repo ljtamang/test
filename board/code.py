@@ -1,8 +1,13 @@
 from pathlib import Path
 from typing import Dict, List, Union
-from datetime import datetime
+from datetime import datetime, timezone
 
-def get_file_metadata(file_path: str, local_base_path: str = "", blob_base_path: str = "") -> Union[Dict[str, Union[str, int, dict]], None]:
+def get_file_metadata(
+    file_path: str, 
+    local_base_path: str = "", 
+    blob_base_path: str = "",
+    updated_at: float = None
+) -> Union[Dict[str, Union[str, int, float, dict]], None]:
     """
     Extract file metadata including storage paths from a given file path.
     
@@ -10,13 +15,18 @@ def get_file_metadata(file_path: str, local_base_path: str = "", blob_base_path:
         file_path (str): The full path to the file
         local_base_path (str): Base path for local storage
         blob_base_path (str): Base path for blob storage
+        updated_at (float): Unix timestamp in UTC. If None, current UTC timestamp is used
         
     Returns:
-        Union[Dict[str, Union[str, int, dict]], None]: Dictionary containing file metadata if successful, None if error
+        Union[Dict[str, Union[str, int, float, dict]], None]: Dictionary containing metadata if successful, None if error
     """
     try:
         path_obj = Path(file_path)
         
+        # Use provided timestamp or current UTC timestamp
+        if updated_at is None:
+            updated_at = datetime.now(timezone.utc).timestamp()
+            
         # Calculate relative path based on local_base_path
         try:
             relative_path = str(path_obj.relative_to(local_base_path))
@@ -28,7 +38,7 @@ def get_file_metadata(file_path: str, local_base_path: str = "", blob_base_path:
             'file_path': str(path_obj),
             'file_size_in_bytes': path_obj.stat().st_size,
             'file_type': path_obj.suffix[1:] if path_obj.suffix else 'No extension',
-            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': updated_at,  # Unix timestamp
             'relative_path': relative_path,
             'local': {
                 'base_path': local_base_path,
@@ -48,7 +58,11 @@ def get_file_metadata(file_path: str, local_base_path: str = "", blob_base_path:
         print(f"Error: {str(e)}")
         return None
 
-def extract_metadata(file_paths: List[str], local_base_path: str = "", blob_base_path: str = "") -> List[Dict[str, Union[str, int, dict]]]:
+def extract_metadata(
+    file_paths: List[str], 
+    local_base_path: str = "", 
+    blob_base_path: str = ""
+) -> List[Dict[str, Union[str, int, float, dict]]]:
     """
     Extract metadata for multiple files.
     
@@ -58,11 +72,19 @@ def extract_metadata(file_paths: List[str], local_base_path: str = "", blob_base
         blob_base_path (str): Base path for blob storage
         
     Returns:
-        List[Dict[str, Union[str, int, dict]]]: List of dictionaries containing metadata
+        List[Dict[str, Union[str, int, float, dict]]]: List of dictionaries containing metadata
     """
+    # Get current UTC timestamp once for all files
+    current_utc = datetime.now(timezone.utc).timestamp()
+    
     all_metadata = []
     for file_path in file_paths:
-        metadata = get_file_metadata(file_path, local_base_path, blob_base_path)
+        metadata = get_file_metadata(
+            file_path, 
+            local_base_path, 
+            blob_base_path,
+            updated_at=current_utc
+        )
         if metadata:
             all_metadata.append(metadata)
     return all_metadata
