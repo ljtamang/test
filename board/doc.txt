@@ -1,0 +1,219 @@
+# VFS Ingestion Workflow
+
+## Key Steps
+
+### First-Time Workflow
+Set up initial ingestion by processing files from a Git repository and storing them in blob storage along with metadata.
+
+### Incremental Ingestion
+Detect and handle changes (additions, modifications, deletions) in the repository, updating blob storage and metadata accordingly.
+
+### Trigger Indexing
+Initiate indexing for files that require updates in Azure AI Search, based on metadata actions.
+
+## Detailed Steps
+
+### First-Time Workflow
+
+#### Objective
+To perform the initial ingestion of files from a Git repository into blob storage and generate metadata for these files.
+
+#### Steps
+
+1. **Clone or Update Git Repository**
+   - Use Sparse Checkout to clone or update the repository to a temporary workspace:
+     - Repository URL: https://github.com/department-of-veterans-affairs/va.gov-team.git
+     - Example workspace: tmp/va.gov-team
+
+2. **Identify Target Files**
+   - Filter Files by Type:
+     - Identify files with the specified file type (e.g., .md)
+   - Tag Files:
+     - Use keyword-based scoring algorithms to assign tags (e.g., "Research Findings" or "Other") based on file content
+     - Example:
+       - Files containing keywords like "study," "analysis," or "findings" are tagged as "Research Findings"
+       - Other files are tagged as "Other"
+   - Filter Files by Tag:
+     - Select files tagged as "Research Findings" for further processing
+
+3. **Generate Metadata**
+   For each identified file:
+   - Record Repository Information:
+     - git_root_path: Base path of the cloned repository
+     - file_relative_path: Path of the file relative to the repository root
+   - File Information:
+     - file_name: Name of the file
+     - file_size: File size in bytes
+     - file_type: File extension (e.g., .md)
+   - Classification:
+     - file_category: Classification, such as "Research Findings" or "Other"
+   - Hashes:
+     - git_blob_hash: Hash of the file in Git for change detection
+   - Timestamps:
+     - created_timestamp: When the file was created
+     - last_modified_timestamp: Last local or remote modification
+     - git_last_commit_date: Last commit date affecting the file
+   - Indexing Information:
+     - index_action: Set to "Add"
+     - index_status: Set to "Pending"
+
+4. **Upload Files to Blob Storage**
+   - Construct the full blob path:
+     - blob_base_path + file_relative_path
+   - Upload each file to its respective blob path in the blob storage container
+
+5. **Store Metadata**
+   - Save the generated metadata as a JSON document
+   - Upload the metadata JSON to blob storage for tracking and future updates
+
+### Incremental Ingestion
+
+#### Objective
+To detect and handle changes (additions, modifications, deletions) in a Git repository and synchronize these changes with blob storage and metadata.
+
+#### Steps
+
+1. **Clone or Update Git Repository**
+   - Use Sparse Checkout to clone or update the repository:
+     - Repository URL: https://github.com/department-of-veterans-affairs/va.gov-team.git
+     - Example workspace: tmp/va.gov-team
+
+2. **Compare Current State with Existing Metadata**
+   - Load the existing metadata JSON from blob storage
+   - Compare the file_relative_path and git_blob_hash fields in the metadata with the current repository state:
+     - Additions:
+       - Files present in the repository but missing in metadata (based on file_relative_path)
+     - Modifications:
+       - Files with mismatched git_blob_hash (indicating changes in content)
+     - Deletions:
+       - Files present in metadata but missing in the repository (based on file_relative_path)
+
+3. **Process Changes**
+   - Additions:
+     - Apply the Identify Target Files steps to identify new files tagged as "Research Findings"
+     - Upload these files to blob storage
+     - Update metadata:
+       - index_action = "Add"
+       - index_status = "Pending"
+   - Modifications:
+     - Replace modified files in blob storage
+     - Update metadata:
+       - index_action = "Update"
+       - index_status = "Pending"
+   - Deletions:
+     - Remove files from blob storage
+     - Update metadata:
+       - index_action = "Delete"
+       - index_status = "Pending"
+
+4. **Update Metadata**
+   - Save the updated metadata JSON back to blob storage
+
+### Trigger Indexing
+
+#### Objective
+To initiate indexing in Azure AI Search based on the metadata's index_action values.
+
+#### Steps
+
+1. **Load Metadata**
+   - Load the metadata JSON from blob storage
+
+2. **Process Indexing Actions**
+   - Identify files requiring indexing based on index_action values:
+     - "Add": Add new files to Azure AI Search
+     - "Update": Update existing entries in Azure AI Search
+     - "Delete": Remove deleted files from Azure AI Search
+
+3. **Trigger Indexing**
+   - Initiate the indexing process for each identified file
+
+## Metadata Definition
+
+| Field Name | Description | Example |
+|------------|-------------|----------|
+| file_name | Name of the file | "research_findings.md" |
+| file_relative_path | Path of the file relative to the repository root | "docs/research_findings.md" |
+| git_root_path | Base path of the cloned Git repository | "tmp/va.gov-team" |
+| blob_base_path | Base path of the blob storage container | "https://myblob.blob.core.windows.net/container" |
+| file_size | Size of the file in bytes | 32567 |
+| file_type | File format or extension | "md" |
+| file_category | Classification of the file, such as "Research Findings" or "Other" | "Research Findings" |
+| git_blob_hash | Hash of the file as stored in the Git repository | "a29f8d5c67f12b3459231b4d2611184a" |
+| created_timestamp | When the file was first created | "2025-01-10T08:23:00Z" |
+| last_modified_timestamp | When the file was last updated locally or in blob storage | "2025-01-10T08:23:00Z" |
+| git_last_commit_date | Date of the last commit in Git that affected the file | "2025-01-10T08:00:00Z" |
+| last_blob_update | When the file was last updated in blob storage | "2025-01-10T08:23:00Z" |
+| last_indexed_timestamp | When the file was last indexed in Azure AI Search | "2025-01-10T08:30:00Z" |
+| index_action | Action required for Azure AI Search indexing (Add, Update, Delete) | "Add" |
+| index_status | Current status of indexing (Pending, InProgress, Completed, Failed) | "Pending" |
+
+## Metadata Examples
+
+### First-Time Workflow Metadata
+
+```json
+{
+  "file_name": "research_findings.md",
+  "file_relative_path": "docs/research_findings.md",
+  "git_root_path": "tmp/va.gov-team",
+  "blob_base_path": "https://myblob.blob.core.windows.net/container",
+  "file_size": 32567,
+  "file_type": "md",
+  "file_category": "Research Findings",
+  "git_blob_hash": "a29f8d5c67f12b3459231b4d2611184a",
+  "created_timestamp": "2025-01-10T08:23:00Z",
+  "last_modified_timestamp": "2025-01-10T08:23:00Z",
+  "git_last_commit_date": "2025-01-10T08:00:00Z",
+  "last_blob_update": "2025-01-10T08:23:00Z",
+  "last_indexed_timestamp": null,
+  "index_action": "Add",
+  "index_status": "Pending"
+}
+```
+
+### Incremental Ingestion Metadata
+
+#### Modified File
+```json
+{
+  "file_name": "research_findings.md",
+  "file_relative_path": "docs/research_findings.md",
+  "git_root_path": "tmp/va.gov-team",
+  "blob_base_path": "https://myblob.blob.core.windows.net/container",
+  "file_size": 34000,
+  "file_type": "md",
+  "file_category": "Research Findings",
+  "git_blob_hash": "c75a9f5c87f62d287c525b4d3611184c",
+  "created_timestamp": "2025-01-10T08:23:00Z",
+  "last_modified_timestamp": "2025-01-12T14:45:00Z",
+  "git_last_commit_date": "2025-01-12T14:00:00Z",
+  "last_blob_update": "2025-01-12T14:50:00Z",
+  "last_indexed_timestamp": null,
+  "index_action": "Update",
+  "index_status": "Pending"
+}
+```
+
+#### Deleted File
+```json
+{
+  "file_name": "obsolete_file.md",
+  "file_relative_path": "docs/obsolete_file.md",
+  "git_root_path": "tmp/va.gov-team",
+  "blob_base_path": "https://myblob.blob.core.windows.net/container",
+  "file_size": null,
+  "file_type": "md",
+  "file_category": "Other",
+  "git_blob_hash": null,
+  "created_timestamp": "2025-01-01T08:23:00Z",
+  "last_modified_timestamp": null,
+  "git_last_commit_date": null,
+  "last_blob_update": null,
+  "last_indexed_timestamp": "2025-01-05T12:30:00Z",
+  "index_action": "Delete",
+  "index_status": "Pending"
+}
+```
+
+This workflow integrates the Metadata Definition into the process and provides clear field-level details to track and process files accurately.
