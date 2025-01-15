@@ -21,50 +21,50 @@ To perform the initial ingestion of files from a Git repository into blob storag
 #### Steps
 
 1. **Clone or Update Git Repository**
-   - Use Sparse Checkout to clone or update the repository to a temporary workspace:
-     - Repository URL: https://github.com/department-of-veterans-affairs/va.gov-team.git
-     - Example workspace: tmp/va.gov-team
+   * Use Sparse Checkout to clone or update the repository to a temporary workspace:
+     * Repository URL: https://github.com/department-of-veterans-affairs/va.gov-team.git
+     * Example workspace: tmp/va.gov-team
 
 2. **Identify Target Files**
-   - Filter Files by Type:
-     - Identify files with the specified file type (e.g., .md)
-   - Tag Files:
-     - Use keyword-based scoring algorithms to assign tags (e.g., "Research Findings" or "Other") based on file content
-     - Example:
-       - Files containing keywords like "study," "analysis," or "findings" are tagged as "Research Findings"
-       - Other files are tagged as "Other"
-   - Filter Files by Tag:
-     - Select files tagged as "Research Findings" for further processing
+   * Filter Files by Type:
+     * Identify files with the specified file type (e.g., .md)
+   * Tag Files:
+     * Use keyword-based scoring algorithms to assign tags (e.g., "Research Findings" or "Other") based on file content
+     * Example:
+       * Files containing keywords like "study," "analysis," or "findings" are tagged as "Research Findings"
+       * Other files are tagged as "Other"
+   * Filter Files by Tag:
+     * Select files tagged as "Research Findings" for further processing
 
-3. **Generate Metadata**
+3. **Generate Metadata**  
    For each identified file:
-   - Record Repository Information:
-     - git_root_path: Base path of the cloned repository
-     - file_relative_path: Path of the file relative to the repository root
-   - File Information:
-     - file_name: Name of the file
-     - file_size: File size in bytes
-     - file_type: File extension (e.g., .md)
-   - Classification:
-     - file_category: Classification, such as "Research Findings" or "Other"
-   - Hashes:
-     - git_blob_hash: Hash of the file in Git for change detection
-   - Timestamps:
-     - created_timestamp: When the file was created
-     - last_modified_timestamp: Last local or remote modification
-     - git_last_commit_date: Last commit date affecting the file
-   - Indexing Information:
-     - index_action: Set to "Add"
-     - index_status: Set to "Pending"
+   * Record Repository Information:
+     * git_root_path: Base path of the cloned repository
+     * file_relative_path: Path of the file relative to the repository root
+   * File Information:
+     * file_name: Name of the file
+     * file_size: File size in bytes
+     * file_type: File extension (e.g., .md)
+   * Classification:
+     * file_category: Classification, such as "Research Findings" or "Other"
+   * Hashes:
+     * git_blob_hash: Hash of the file in Git for change detection
+   * Timestamps:
+     * created_timestamp: When the file was created
+     * last_modified_timestamp: Last local or remote modification
+     * git_last_commit_date: Last commit date affecting the file
+   * Indexing Information:
+     * index_action: Set to "Add"
+     * index_status: Set to "Pending"
 
 4. **Upload Files to Blob Storage**
-   - Construct the full blob path:
-     - blob_base_path + file_relative_path
-   - Upload each file to its respective blob path in the blob storage container
+   * Construct the full blob path:
+     * blob_base_path + file_relative_path
+   * Upload each file to its respective blob path in the blob storage container
 
 5. **Store Metadata**
-   - Save the generated metadata as a JSON document
-   - Upload the metadata JSON to blob storage for tracking and future updates
+   * Save the generated metadata as a JSON document
+   * Upload the metadata JSON to blob storage for tracking and future updates
 
 ### Incremental Ingestion
 
@@ -74,40 +74,40 @@ To detect and handle changes (additions, modifications, deletions) in a Git repo
 #### Steps
 
 1. **Clone or Update Git Repository**
-   - Use Sparse Checkout to clone or update the repository:
-     - Repository URL: https://github.com/department-of-veterans-affairs/va.gov-team.git
-     - Example workspace: tmp/va.gov-team
+   * Use Sparse Checkout to clone or update the repository:
+     * Repository URL: https://github.com/department-of-veterans-affairs/va.gov-team.git
+     * Example workspace: tmp/va.gov-team
 
 2. **Compare Current State with Existing Metadata**
-   - Load the existing metadata JSON from blob storage
-   - Compare the file_relative_path and git_blob_hash fields in the metadata with the current repository state:
-     - Additions:
-       - Files present in the repository but missing in metadata (based on file_relative_path)
-     - Modifications:
-       - Files with mismatched git_blob_hash (indicating changes in content)
-     - Deletions:
-       - Files present in metadata but missing in the repository (based on file_relative_path)
+   * Load the existing metadata JSON from blob storage
+   * Compare the file_relative_path and git_blob_hash fields in the metadata with the current repository state:
+     * Additions:
+       * Files present in the repository but missing in metadata (based on file_relative_path)
+     * Modifications:
+       * Files with mismatched git_blob_hash (indicating changes in content)
+     * Deletions:
+       * Files present in metadata but missing in the repository (based on file_relative_path)
 
 3. **Process Changes**
-   - Additions:
-     - Apply the Identify Target Files steps to identify new files tagged as "Research Findings"
-     - Upload these files to blob storage
-     - Update metadata:
-       - index_action = "Add"
-       - index_status = "Pending"
-   - Modifications:
-     - Replace modified files in blob storage
-     - Update metadata:
-       - index_action = "Update"
-       - index_status = "Pending"
-   - Deletions:
-     - Remove files from blob storage
-     - Update metadata:
-       - index_action = "Delete"
-       - index_status = "Pending"
+   * Additions:
+     * Apply the Identify Target Files steps to identify new files tagged as "Research Findings"
+     * Upload these files to blob storage
+     * Update metadata:
+       * index_action = "Add"
+       * index_status = "Pending"
+   * Modifications:
+     * Replace modified files in blob storage
+     * Update metadata:
+       * index_action = "Update"
+       * index_status = "Pending"
+   * Deletions:
+     * Remove files from blob storage
+     * Update metadata:
+       * index_action = "Delete"
+       * index_status = "Pending"
 
 4. **Update Metadata**
-   - Save the updated metadata JSON back to blob storage
+   * Save the updated metadata JSON back to blob storage
 
 ### Trigger Indexing
 
@@ -117,16 +117,16 @@ To initiate indexing in Azure AI Search based on the metadata's index_action val
 #### Steps
 
 1. **Load Metadata**
-   - Load the metadata JSON from blob storage
+   * Load the metadata JSON from blob storage
 
 2. **Process Indexing Actions**
-   - Identify files requiring indexing based on index_action values:
-     - "Add": Add new files to Azure AI Search
-     - "Update": Update existing entries in Azure AI Search
-     - "Delete": Remove deleted files from Azure AI Search
+   * Identify files requiring indexing based on index_action values:
+     * "Add": Add new files to Azure AI Search
+     * "Update": Update existing entries in Azure AI Search
+     * "Delete": Remove deleted files from Azure AI Search
 
 3. **Trigger Indexing**
-   - Initiate the indexing process for each identified file
+   * Initiate the indexing process for each identified file
 
 ## Metadata Definition
 
@@ -138,15 +138,15 @@ To initiate indexing in Azure AI Search based on the metadata's index_action val
 | blob_base_path | Base path of the blob storage container | "https://myblob.blob.core.windows.net/container" |
 | file_size | Size of the file in bytes | 32567 |
 | file_type | File format or extension | "md" |
-| file_category | Classification of the file, such as "Research Findings" or "Other" | "Research Findings" |
-| git_blob_hash | Hash of the file as stored in the Git repository | "a29f8d5c67f12b3459231b4d2611184a" |
+| file_category | Classification of the file | "Research Findings" |
+| git_blob_hash | Hash of the file in Git | "a29f8d5c67f12b3459231b4d2611184a" |
 | created_timestamp | When the file was first created | "2025-01-10T08:23:00Z" |
-| last_modified_timestamp | When the file was last updated locally or in blob storage | "2025-01-10T08:23:00Z" |
-| git_last_commit_date | Date of the last commit in Git that affected the file | "2025-01-10T08:00:00Z" |
-| last_blob_update | When the file was last updated in blob storage | "2025-01-10T08:23:00Z" |
-| last_indexed_timestamp | When the file was last indexed in Azure AI Search | "2025-01-10T08:30:00Z" |
-| index_action | Action required for Azure AI Search indexing (Add, Update, Delete) | "Add" |
-| index_status | Current status of indexing (Pending, InProgress, Completed, Failed) | "Pending" |
+| last_modified_timestamp | Last update time (local/blob) | "2025-01-10T08:23:00Z" |
+| git_last_commit_date | Last Git commit date | "2025-01-10T08:00:00Z" |
+| last_blob_update | Last blob storage update time | "2025-01-10T08:23:00Z" |
+| last_indexed_timestamp | Last Azure AI Search index time | "2025-01-10T08:30:00Z" |
+| index_action | Required indexing action | "Add" |
+| index_status | Current indexing status | "Pending" |
 
 ## Metadata Examples
 
@@ -172,7 +172,7 @@ To initiate indexing in Azure AI Search based on the metadata's index_action val
 }
 ```
 
-### Incremental Ingestion Metadata
+### Incremental Ingestion Metadata Examples
 
 #### Modified File
 ```json
