@@ -2,14 +2,16 @@
 
 ## Key Steps
 
-### First-Time Workflow
-Set up initial ingestion by processing files from a Git repository and storing them in blob storage along with metadata.
+* **First-Time Workflow**  
+  Set up initial ingestion by processing files from a Git repository and storing them in blob storage along with metadata.
 
-### Incremental Ingestion
-Detect and handle changes (additions, modifications, deletions) in the repository, updating blob storage and metadata accordingly.
+* **Incremental Ingestion**  
+  Detect and handle changes (additions, modifications, deletions) in the repository, updating blob storage and metadata accordingly.
 
-### Trigger Indexing
-Initiate indexing for files that require updates in Azure AI Search, based on metadata actions.
+* **Trigger Indexing**  
+  Initiate indexing for files that require updates in Azure AI Search, based on metadata actions.
+
+---
 
 ## Detailed Steps
 
@@ -66,6 +68,8 @@ To perform the initial ingestion of files from a Git repository into blob storag
    * Save the generated metadata as a JSON document
    * Upload the metadata JSON to blob storage for tracking and future updates
 
+---
+
 ### Incremental Ingestion
 
 #### Objective
@@ -109,6 +113,8 @@ To detect and handle changes (additions, modifications, deletions) in a Git repo
 4. **Update Metadata**
    * Save the updated metadata JSON back to blob storage
 
+---
+
 ### Trigger Indexing
 
 #### Objective
@@ -127,6 +133,8 @@ To initiate indexing in Azure AI Search based on the metadata's index_action val
 
 3. **Trigger Indexing**
    * Initiate the indexing process for each identified file
+
+---
 
 ## Metadata Definition
 
@@ -147,6 +155,8 @@ To initiate indexing in Azure AI Search based on the metadata's index_action val
 | last_indexed_timestamp | Last Azure AI Search index time | "2025-01-10T08:30:00Z" |
 | index_action | Required indexing action | "Add" |
 | index_status | Current indexing status | "Pending" |
+
+---
 
 ## Metadata Examples
 
