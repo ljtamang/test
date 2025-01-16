@@ -104,12 +104,14 @@ def get_git_info(file_path: Path) -> dict[str, str | None]:
         }
 
 # Example usage:
-def process_files(file_list):
+def process_files(file_list: list[dict], git_root_path: str, blob_base_path: str) -> list[dict]:
     """
     Process a list of files and generate metadata for each.
     
     Args:
         file_list (List[Dict]): List of dictionaries containing file information
+        git_root_path (str): Root path of the git repository
+        blob_base_path (str): Base URL for blob storage
         
     Returns:
         List[Dict]: List of metadata dictionaries for each file
@@ -118,7 +120,7 @@ def process_files(file_list):
     
     for file_info in file_list:
         try:
-            metadata = get_metadata(file_info)
+            metadata = get_metadata(file_info, git_root_path, blob_base_path)
             metadata_list.append(metadata)
         except Exception as e:
             print(f"Error processing file {file_info['file_path']}: {str(e)}")
@@ -138,6 +140,9 @@ if __name__ == "__main__":
         }
     ]
     
-    results = process_files(files)
+    git_root = "/path/to/git/repo"
+    blob_base = "https://myblob.blob.core.windows.net/container"
+    
+    results = process_files(files, git_root, blob_base)
     for metadata in results:
         print(metadata)
