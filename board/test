@@ -1,39 +1,129 @@
-# Ensure the project root is added to sys.path in the notebook
+# utils/file_utils.py
+import os
+import sys
+import json
+from pathlib import Path
+
+def resolve_project_root():
+    """Resolve project root when running from different locations in Databricks"""
+    current_file = Path(os.path.abspath(__file__))
+    current_dir = current_file.parent
+    
+    # If running from utils folder
+    if current_dir.name == 'utils':
+        return current_dir.parent
+        
+    # If running from notebooks or other locations
+    while current_dir.name:
+        if (current_dir / 'utils').exists() and (current_dir / 'notebooks').exists():
+            return current_dir
+        current_dir = current_dir.parent
+    
+    raise RuntimeError("Could not find project root directory")
+
+# Set up project root
+project_root = resolve_project_root()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+def read_file_content(file_path):
+    """Read content from a file."""
+    with open(file_path, 'r') as f:
+        return f.read()
+
+def write_file_content(file_path, content):
+    """Write content to a file."""
+    # Ensure directory exists for file
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(file_path, 'w') as f:
+        f.write(content)
+
+def read_json_config(config_name):
+    """Read JSON config file from configs directory."""
+    try:
+        config_path = project_root / "configs" / config_name
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error reading config {config_name}: {e}")
+        return {}
+
+# notebooks/bronze_full_ingestion.py
+import os
 import sys
 from pathlib import Path
 
-# Add project root dynamically
-project_root = Path().resolve().parent
+# Get project root when running from notebook
+current_dir = Path(os.path.abspath(__file__)).parent
+project_root = current_dir.parent
+
+# Add to Python path if needed
 if str(project_root) not in sys.path:
-    sys.path.append(str(project_root))
+    sys.path.insert(0, str(project_root))
 
-# Import and use the file_tagger service
-from services.file_tagger import tag_files
+from utils import file_utils, git_utils
+from services import file_tagger
 
-# Use the tag_files function
-tag_files()
+def main():
+    # Read configuration
+    config = file_utils.read_json_config("bronze_config.json")
+    
+    # Print configuration
+    print("Configuration loaded:")
+    print(f"Database: {config.get('database_name')}")
+    print(f"Table: {config.get('table_name')}")
+    print(f"Source Path: {config.get('source_path')}")
+    
+    # Test file operations
+    test_file = project_root / "tmp" / "bronze_test.txt"
+    test_content = "Test from bronze ingestion"
+    file_utils.write_file_content(test_file, test_content)
+    
+    # Test file tagging
+    tagged_content = file_tagger.tag_file(test_file, "BRONZE")
+    print(f"Tagged content: {tagged_content}")
 
-
-
+if __name__ == "__main__":
+    main()
 
 # services/file_tagger.py
+import os
 import sys
 from pathlib import Path
 
-# Add project root to sys.path dynamically for direct execution
-current_file = Path(__file__).resolve()
-project_root = current_file.parent.parent
+# Get project root when running from services
+current_dir = Path(os.path.abspath(__file__)).parent
+project_root = current_dir.parent
+
+# Add to Python path if needed
 if str(project_root) not in sys.path:
-    sys.path.append(str(project_root))
+    sys.path.insert(0, str(project_root))
 
-# Import the utility function using absolute import
-from utils.file_utils import read_content
+from utils import file_utils
 
-# Example function in file_tagger
-def tag_files():
-    print("Tagging files...")
-    read_content()
+def tag_file(file_path, tag):
+    """Tag a file with metadata."""
+    content = file_utils.read_file_content(file_path)
+    return f"{tag}: {content}"
 
-# Direct execution
+def save_tagged_file(file_path, tag, output_path):
+    """Tag and save file."""
+    tagged_content = tag_file(file_path, tag)
+    file_utils.write_file_content(output_path, tagged_content)
+
 if __name__ == "__main__":
-    tag_files()
+    # Test code
+    test_file = project_root / "tmp" / "test_input.txt"
+    test_output = project_root / "tmp" / "test_output.txt"
+    
+    try:
+        # Test tagging
+        file_utils.write_file_content(test_file, "Test content")
+        tagged = tag_file(test_file, "TEST")
+        print(f"Tagged content: {tagged}")
+        
+        # Test saving
+        save_tagged_file(test_file, "TEST", test_output)
+        print(f"Saved tagged file to: {test_output}")
+    except Exception as e:
+        print(f"Error during testing: {e}")
