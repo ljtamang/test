@@ -1,188 +1,39 @@
-import os
-import shutil
-import concurrent.futures
+# Ensure the project root is added to sys.path in the notebook
+import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
-import psutil
-import time
+
+# Add project root dynamically
+project_root = Path().resolve().parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+# Import and use the file_tagger service
+from services.file_tagger import tag_files
+
+# Use the tag_files function
+tag_files()
 
 
-def get_optimal_workers(total_files: int) -> int:
-    """
-    Determine optimal number of workers based on system resources and workload.
-    
-    Args:
-        total_files (int): Total number of files to be copied
-        
-    Returns:
-        int: Recommended number of worker threads
-    """
-    cpu_count = psutil.cpu_count(logical=False)
-    memory = psutil.virtual_memory()
-    
-    base_workers = cpu_count if cpu_count else 4
-    memory_factor = 0.5 if memory.percent > 80 else 1.5 if memory.percent < 40 else 1.0
-    file_factor = 0.5 if total_files < 100 else 1.5 if total_files > 1000 else 1.0
-    
-    optimal_workers = int(base_workers * memory_factor * file_factor)
-    return max(2, min(optimal_workers, 32))
 
-def get_relative_path(src_path: str, base_path: str) -> Optional[Path]:
-    """
-    Calculate the relative path by removing the base path.
-    
-    Args:
-        src_path (str): Source file path
-        base_path (str): Base path to ignore
-        
-    Returns:
-        Optional[Path]: Relative path if successful, None if path cannot be processed
-    """
-    try:
-        src = Path(src_path)
-        base = Path(base_path)
-        
-        try:
-            return src.relative_to(base)
-        except ValueError:
-            # If the path doesn't start with base_path, take everything after base_path
-            path_parts = src_path.split(base_path)
-            if len(path_parts) > 1:
-                return Path(path_parts[1].lstrip('/'))
-            return None
-    except Exception as e:
-        print(f"Error processing path {src_path}: {str(e)}")
-        return None
 
-def copy_file(src_path: str, dest_path: Path) -> bool:
-    """
-    Copy a single file to destination.
-    
-    Args:
-        src_path (str): Source file path
-        dest_path (Path): Destination file path
-        
-    Returns:
-        bool: True if copy successful, False otherwise
-    """
-    try:
-        src = Path(src_path)
-        if not src.exists():
-            print(f"Source file does not exist: {src_path}")
-            return False
-            
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest_path)
-        return True
-    except Exception as e:
-        print(f"Error copying {src_path}: {str(e)}")
-        return False
+# services/file_tagger.py
+import sys
+from pathlib import Path
 
-def prepare_copy_tasks(
-    file_paths: List[str],
-    destination_path: str,
-    base_path_to_ignore: str
-) -> Tuple[List[Tuple[str, Path]], int]:
-    """
-    Prepare copy tasks by validating files and calculating paths.
-    
-    Args:
-        file_paths (List[str]): List of source file paths
-        destination_path (str): Base destination directory
-        base_path_to_ignore (str): Base path prefix to ignore
-        
-    Returns:
-        Tuple[List[Tuple[str, Path]], int]: List of (source, destination) pairs and total size
-    """
-    destination = Path(destination_path)
-    copy_tasks = []
-    total_size = 0
-    
-    for src_path in file_paths:
-        if not Path(src_path).exists():
-            continue
-            
-        rel_path = get_relative_path(src_path, base_path_to_ignore)
-        if rel_path:
-            dest_file = destination / rel_path
-            copy_tasks.append((src_path, dest_file))
-            total_size += Path(src_path).stat().st_size
-    
-    return copy_tasks, total_size
+# Add project root to sys.path dynamically for direct execution
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
-def execute_copy_tasks(
-    copy_tasks: List[Tuple[str, Path]],
-    max_workers: Optional[int] = None
-) -> int:
-    """
-    Execute copy tasks in parallel.
-    
-    Args:
-        copy_tasks (List[Tuple[str, Path]]): List of (source, destination) pairs
-        max_workers (int, optional): Maximum number of worker threads
-        
-    Returns:
-        int: Number of successfully copied files
-    """
-    if not max_workers:
-        max_workers = get_optimal_workers(len(copy_tasks))
-    
-    successful_copies = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(copy_file, src, dst)
-            for src, dst in copy_tasks
-        ]
-        
-        for idx, future in enumerate(concurrent.futures.as_completed(futures)):
-            if future.result():
-                successful_copies += 1
-            
-            if (idx + 1) % 100 == 0:
-                print(f"Processed {idx + 1}/{len(copy_tasks)} files...")
-    
-    return successful_copies
+# Import the utility function using absolute import
+from utils.file_utils import read_content
 
-def copy_files(
-    file_paths: List[str],
-    destination_path: str,
-    base_path_to_ignore: str,
-    max_workers: Optional[int] = None
-) -> None:
-    """
-    Copy specific files to destination while preserving relative path structure.
-    
-    Args:
-        file_paths (List[str]): List of full file paths to copy
-        destination_path (str): Destination directory path
-        base_path_to_ignore (str): Base path prefix to ignore
-        max_workers (int, optional): Maximum number of worker threads
-    """
-    start_time = time.time()
-    
-    # Create destination directory
-    Path(destination_path).mkdir(parents=True, exist_ok=True)
-    
-    # Prepare copy tasks
-    copy_tasks, total_size = prepare_copy_tasks(
-        file_paths,
-        destination_path,
-        base_path_to_ignore
-    )
-    
-    if not copy_tasks:
-        print("No valid files to copy")
-        return
-    
-    print(f"Starting copy operation with {max_workers or 'auto'} workers")
-    print(f"Total files to copy: {len(copy_tasks)}")
-    print(f"Total size: {total_size / (1024*1024):.2f} MB")
-    
-    # Execute copy tasks
-    successful_copies = execute_copy_tasks(copy_tasks, max_workers)
-    
-    duration = time.time() - start_time
-    print(f"\nCopy operation completed:")
-    print(f"Successfully copied: {successful_copies}/{len(copy_tasks)} files")
-    print(f"Time taken: {duration:.2f} seconds")
-    print(f"Average speed: {(total_size / (1024*1024)) / duration:.2f} MB/s")
+# Example function in file_tagger
+def tag_files():
+    print("Tagging files...")
+    read_content()
+
+# Direct execution
+if __name__ == "__main__":
+    tag_files()
