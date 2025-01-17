@@ -1,19 +1,36 @@
-# utils/file_utils.py
+project_root/
+├── notebooks/
+│   ├── __init__.py
+│   ├── bronze_full_ingestion.py
+│   └── silver_transformation.py
+├── utils/
+│   ├── __init__.py
+│   ├── path_utils.py
+│   ├── file_utils.py
+│   └── git_utils.py
+├── services/
+│   ├── __init__.py
+│   ├── file_tagger.py
+│   └── metadata_service.py
+├── configs/
+│   └── bronze_config.json
+└── README.md
+
+# utils/path_utils.py
 import os
 import sys
-import json
 from pathlib import Path
 
 def resolve_project_root():
-    """Resolve project root when running from different locations in Databricks"""
+    """Standard way to resolve project root from any location"""
     current_file = Path(os.path.abspath(__file__))
     current_dir = current_file.parent
     
-    # If running from utils folder
-    if current_dir.name == 'utils':
+    # If in utils/services folder, go up one level
+    if current_dir.name in ['utils', 'services']:
         return current_dir.parent
         
-    # If running from notebooks or other locations
+    # Otherwise traverse up until finding project root markers
     while current_dir.name:
         if (current_dir / 'utils').exists() and (current_dir / 'notebooks').exists():
             return current_dir
@@ -21,10 +38,22 @@ def resolve_project_root():
     
     raise RuntimeError("Could not find project root directory")
 
-# Set up project root
-project_root = resolve_project_root()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+def setup_project_path():
+    """Setup project path and return project root"""
+    project_root = resolve_project_root()
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    return project_root
+
+# utils/file_utils.py
+import os
+import sys
+import json
+from pathlib import Path
+from .path_utils import setup_project_path
+
+# Initialize paths
+project_root = setup_project_path()
 
 def read_file_content(file_path):
     """Read content from a file."""
@@ -33,7 +62,6 @@ def read_file_content(file_path):
 
 def write_file_content(file_path, content):
     """Write content to a file."""
-    # Ensure directory exists for file
     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
     with open(file_path, 'w') as f:
         f.write(content)
@@ -48,58 +76,79 @@ def read_json_config(config_name):
         print(f"Error reading config {config_name}: {e}")
         return {}
 
-# notebooks/bronze_full_ingestion.py
+if __name__ == "__main__":
+    print("Testing file_utils.py")
+    try:
+        test_file = project_root / "tmp" / "test.txt"
+        test_content = "Test content"
+        write_file_content(test_file, test_content)
+        read_content = read_file_content(test_file)
+        print(f"File operations test: {test_content == read_content}")
+        
+        config = read_json_config("bronze_config.json")
+        print(f"Config test: {bool(config)}")
+    except Exception as e:
+        print(f"Error during testing: {e}")
+
+# utils/git_utils.py
 import os
 import sys
+import subprocess
 from pathlib import Path
+from .path_utils import setup_project_path
 
-# Get project root when running from notebook
-current_dir = Path(os.path.abspath(__file__)).parent
-project_root = current_dir.parent
+# Initialize paths
+project_root = setup_project_path()
 
-# Add to Python path if needed
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+def clone_repo(repo_url, target_path):
+    """Clone a git repository."""
+    try:
+        subprocess.run(
+            ["git", "clone", repo_url, target_path],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error cloning repository: {e.stderr}")
+        return False
 
-from utils import file_utils, git_utils
-from services import file_tagger
+def get_repo_info(repo_path):
+    """Get git repository information."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", repo_path, "status"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        return f"Error: {e.stderr}"
 
-def main():
-    # Read configuration
-    config = file_utils.read_json_config("bronze_config.json")
-    
-    # Print configuration
-    print("Configuration loaded:")
-    print(f"Database: {config.get('database_name')}")
-    print(f"Table: {config.get('table_name')}")
-    print(f"Source Path: {config.get('source_path')}")
-    
-    # Test file operations
-    test_file = project_root / "tmp" / "bronze_test.txt"
-    test_content = "Test from bronze ingestion"
-    file_utils.write_file_content(test_file, test_content)
-    
-    # Test file tagging
-    tagged_content = file_tagger.tag_file(test_file, "BRONZE")
-    print(f"Tagged content: {tagged_content}")
-
-if __name__ == "__main__":
-    main()
+def checkout_branch(repo_path, branch_name, create=False):
+    """Checkout or create a git branch."""
+    try:
+        cmd = ["git", "-C", repo_path, "checkout"]
+        if create:
+            cmd.append("-b")
+        cmd.append(branch_name)
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error checking out branch: {e.stderr}")
+        return False
 
 # services/file_tagger.py
 import os
 import sys
 from pathlib import Path
-
-# Get project root when running from services
-current_dir = Path(os.path.abspath(__file__)).parent
-project_root = current_dir.parent
-
-# Add to Python path if needed
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
+from utils.path_utils import setup_project_path
 from utils import file_utils
+
+# Initialize paths
+project_root = setup_project_path()
 
 def tag_file(file_path, tag):
     """Tag a file with metadata."""
@@ -112,18 +161,142 @@ def save_tagged_file(file_path, tag, output_path):
     file_utils.write_file_content(output_path, tagged_content)
 
 if __name__ == "__main__":
-    # Test code
-    test_file = project_root / "tmp" / "test_input.txt"
-    test_output = project_root / "tmp" / "test_output.txt"
-    
+    print("Testing file_tagger.py")
     try:
-        # Test tagging
+        test_file = project_root / "tmp" / "test_input.txt"
+        test_output = project_root / "tmp" / "test_output.txt"
+        
         file_utils.write_file_content(test_file, "Test content")
         tagged = tag_file(test_file, "TEST")
         print(f"Tagged content: {tagged}")
         
-        # Test saving
         save_tagged_file(test_file, "TEST", test_output)
         print(f"Saved tagged file to: {test_output}")
     except Exception as e:
         print(f"Error during testing: {e}")
+
+# services/metadata_service.py
+import os
+import sys
+import json
+from pathlib import Path
+from utils.path_utils import setup_project_path
+from utils import file_utils
+
+# Initialize paths
+project_root = setup_project_path()
+
+def add_metadata(file_path, metadata):
+    """Add metadata to a file."""
+    try:
+        content = file_utils.read_file_content(file_path)
+        full_metadata = {
+            "content": content,
+            "metadata": metadata,
+            "file_path": str(file_path)
+        }
+        return json.dumps(full_metadata)
+    except Exception as e:
+        print(f"Error adding metadata: {e}")
+        return None
+
+def get_metadata(metadata_content):
+    """Extract metadata from content."""
+    try:
+        data = json.loads(metadata_content)
+        return data.get("metadata", {})
+    except json.JSONDecodeError:
+        return {}
+
+if __name__ == "__main__":
+    print("Testing metadata_service.py")
+    try:
+        test_file = project_root / "tmp" / "test_metadata.txt"
+        test_content = "Test content for metadata"
+        
+        file_utils.write_file_content(test_file, test_content)
+        
+        test_metadata = {
+            "author": "Test User",
+            "version": "1.0",
+            "timestamp": "2024-01-17"
+        }
+        
+        metadata_content = add_metadata(test_file, test_metadata)
+        print(f"Added metadata: {metadata_content}")
+        
+        retrieved_metadata = get_metadata(metadata_content)
+        print(f"Retrieved metadata: {retrieved_metadata}")
+        
+    except Exception as e:
+        print(f"Error during testing: {e}")
+
+# notebooks/bronze_full_ingestion.py
+import os
+import sys
+from pathlib import Path
+from utils.path_utils import setup_project_path
+
+# Initialize paths
+project_root = setup_project_path()
+
+from utils import file_utils, git_utils
+from services import file_tagger
+
+def main():
+    config = file_utils.read_json_config("bronze_config.json")
+    
+    print("Configuration loaded:")
+    print(f"Database: {config.get('database_name')}")
+    print(f"Table: {config.get('table_name')}")
+    print(f"Source Path: {config.get('source_path')}")
+    
+    test_file = project_root / "tmp" / "bronze_test.txt"
+    test_content = "Test from bronze ingestion"
+    file_utils.write_file_content(test_file, test_content)
+    
+    tagged_content = file_tagger.tag_file(test_file, "BRONZE")
+    print(f"Tagged content: {tagged_content}")
+    
+    repo_info = git_utils.get_repo_info(str(project_root))
+    print(f"Git repository status:\n{repo_info}")
+
+if __name__ == "__main__":
+    main()
+
+# notebooks/silver_transformation.py
+import os
+import sys
+from pathlib import Path
+from utils.path_utils import setup_project_path
+
+# Initialize paths
+project_root = setup_project_path()
+
+from utils import file_utils
+from services import file_tagger
+
+def main():
+    bronze_config = file_utils.read_json_config("bronze_config.json")
+    source_path = bronze_config.get("target_path")
+    print(f"Processing data from: {source_path}")
+    
+    # Your silver transformation code here...
+
+if __name__ == "__main__":
+    main()
+
+# configs/bronze_config.json
+{
+    "database_name": "bronze_db",
+    "table_name": "bronze_table",
+    "source_path": "/mnt/data/raw",
+    "target_path": "/mnt/data/bronze",
+    "file_format": "delta",
+    "write_mode": "overwrite",
+    "partition_by": ["date"],
+    "options": {
+        "mergeSchema": "true",
+        "inferSchema": "true"
+    }
+}
