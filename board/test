@@ -1,3 +1,32 @@
+
+
+ Add project root to path if running directly
+if __name__ == '__main__':
+    # Get the project root (two directories up from this script)
+    current_file = Path(__file__).resolve()
+    project_root = str(current_file.parent.parent)
+    
+    # Add project root to path if not already there
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    
+    # Now import path_setup
+    from path_setup import setup_script_paths
+    PROJECT_ROOT = setup_script_paths()
+
+# Import required modules (this will work both when running as main or when imported)
+try:
+    from utils.file_utils import read_file, write_file
+    from utils.git_utils import get_git_info
+except ImportError as e:
+    # If imports fail, try setting up paths and importing again
+    from path_setup import setup_script_paths
+    setup_script_paths()
+    from utils.file_utils import read_file, write_file
+    from utils.git_utils import get_git_info
+
+
+=============
 # path_setup.py
 import os
 import sys
