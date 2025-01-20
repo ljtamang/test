@@ -2,42 +2,66 @@ from typing import List, Optional, Union
 from pathlib import Path
 
 def get_files_from_directories(
-    directories: List[Union[str, Path]], 
+    base_path: Union[str, Path],
+    directories: List[str], 
     file_types: Optional[List[str]] = None
-) -> List[str]:
+) -> tuple[List[str], List[str]]:
     """
-    Retrieve all files from multiple directories that match the specified file types.
+    Retrieve all files from multiple directories under a base path that match the specified file types.
+    Continues processing even if some directories are invalid.
     
     Args:
-        directories (List[Union[str, Path]]): List of directory paths to search in.
-            Paths can be provided as strings or Path objects.
+        base_path (Union[str, Path]): The root directory path where all directories are located.
+        directories (List[str]): List of directory names (not full paths) to search in.
+            These are relative to the base_path.
         file_types (Optional[List[str]], optional): List of file extensions to filter by.
             If None, all files will be included. Defaults to None.
             Example: ['.txt', '.pdf', '.doc']
     
     Returns:
-        List[str]: A list of file paths that match the criteria.
-        
+        tuple[List[str], List[str]]: A tuple containing:
+            - List of file paths that match the criteria
+            - List of invalid directory names that were skipped
+            
     Raises:
-        ValueError: If any of the provided directories don't exist.
+        ValueError: If the base_path doesn't exist or is not a directory
         
     Example:
-        >>> dirs = ['/path/to/dir1', '/path/to/dir2']
+        >>> base = '/home/user/projects'
+        >>> dirs = ['docs', 'invalid_dir', 'src']
         >>> file_types = ['.txt', '.pdf']
-        >>> files = get_files_from_directories(dirs, file_types)
+        >>> files, invalid_dirs = get_files_from_directories(base, dirs, file_types)
+        >>> print(f"Found files: {files}")
+        >>> print(f"Invalid directories: {invalid_dirs}")
     """
+    # Convert base path to Path object and validate it
+    base_path = Path(base_path) if isinstance(base_path, str) else base_path
+    if not base_path.exists() or not base_path.is_dir():
+        raise ValueError(f"Base path is not a valid directory: {base_path}")
+    
     all_files = []
+    invalid_directories = []
     
     for directory in directories:
-        # Convert string path to Path object if necessary
-        dir_path = Path(directory) if isinstance(directory, str) else directory
+        # Combine base path with directory name
+        dir_path = base_path / directory
         
-        # Validate directory exists
+        # Check if path is a valid directory
         if not dir_path.exists() or not dir_path.is_dir():
-            raise ValueError(f"Directory does not exist: {directory}")
+            invalid_directories.append(directory)  # Store just the directory name, not full path
+            continue
             
-        # Use the existing list_files function to get files from this directory
-        files = list_files(str(dir_path), file_types)
-        all_files.extend(files)
+        try:
+            # Use the existing list_files function to get files from this directory
+            files = list_files(str(dir_path), file_types)
+            all_files.extend(files)
+        except Exception as e:
+            # If list_files fails for any reason, add to invalid directories
+            invalid_directories.append(directory)
+            continue
     
-    return all_files
+    # If any directories were invalid, print a warning
+    if invalid_directories:
+        print(f"Warning: The following directories were invalid or inaccessible: {invalid_directories}")
+    
+    return all_files, invalid_directories
