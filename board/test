@@ -1,174 +1,327 @@
 # Project Structure:
-# project_root/
-# ├── utils/
-# │   ├── __init__.py
-# │   ├── path_utils.py
-# │   ├── file_utils.py
-# │   └── git_utils.py
-# ├── services/
-# │   ├── __init__.py
-# │   ├── file_tagger.py
-# │   └── metadata_service.py
-# ├── configs/
-# │   └── bronze_config.json
-# ├── bronze_etl.ipynb
-# ├── silver_etl.ipynb
-# └── README.md
+project_root/
+├── path_setup.py
+├── utils/
+│   ├── __init__.py
+│   ├── file_utils.py
+│   └── git_utils.py
+├── services/
+│   ├── __init__.py
+│   ├── file_tagger.py
+│   └── metadata_service.py
+├── configs/
+│   └── bronze_config.json
+├── bronze_etl.ipynb
+└── silver_etl.ipynb
 
 ###############################################
-# utils/path_utils.py
+# path_setup.py
 ###############################################
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
+def setup_project_path():
+    """
+    Add project root to Python path if not already present.
+    This function can be called from any location within the project.
+    """
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent
+    project_root_str = str(project_root)
+    
+    if project_root_str not in sys.path:
+        sys.path.insert(0, project_root_str)
+        print(f"Added to Python path: {project_root_str}")
+    
+    return project_root
 
-class ProjectPathManager:
-    _instance: Optional['ProjectPathManager'] = None
-    _is_initialized = False
+# Run setup when this module is imported
+project_root = setup_project_path()
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        if not self._is_initialized:
-            self.project_root = self._resolve_project_root()
-            self._setup_paths()
-            ProjectPathManager._is_initialized = True
-
-    def _resolve_project_root(self) -> Path:
-        """Get project root from any execution context"""
-        try:
-            # Try Databricks notebook context
-            import dbutils.notebook
-            notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getPath().get()
-            return Path(notebook_path).parent
-        except:
-            # Use current working directory
-            current_dir = Path(os.getcwd())
-            
-            # If in utils or services, go up one level
-            if current_dir.name in ['utils', 'services']:
-                current_dir = current_dir.parent
-                
-            return current_dir
-
-    def _setup_paths(self):
-        """Initialize paths and add to system path"""
-        self.utils_dir = self.project_root / 'utils'
-        self.services_dir = self.project_root / 'services'
-        self.configs_dir = self.project_root / 'configs'
-
-        # Add project root to Python path if not already there
-        project_root_str = str(self.project_root)
-        if project_root_str not in sys.path:
-            sys.path.insert(0, project_root_str)
-
-    def get_dbfs_path(self, path: Path | str) -> str:
-        """Convert to DBFS path if needed"""
-        path_str = str(path)
-        return f"/dbfs{path_str}" if not path_str.startswith('/dbfs/') else path_str
-
-    @property
-    def paths(self) -> dict:
-        """Get all project paths"""
-        return {
-            'project_root': self.project_root,
-            'utils_dir': self.utils_dir,
-            'services_dir': self.services_dir,
-            'configs_dir': self.configs_dir
-        }
-
-
-# Create global instance
-project_paths = ProjectPathManager()
-
-if __name__ == '__main__':
-    print("\nProject Paths:")
-    for name, path in project_paths.paths.items():
-        print(f"{name}: {path}")
+if __name__ == "__main__":
+    print("\nProject root:", project_root)
+    print("\nPython path:")
+    for path in sys.path:
+        print(f"- {path}")
 
 ###############################################
 # utils/__init__.py
 ###############################################
-from utils.path_utils import project_paths
-from utils import file_utils
-from utils import git_utils
+"""
+Utility modules for file and git operations.
+"""
+from utils.file_utils import read_json_config, safe_read_file
+from utils.git_utils import get_git_info
 
-paths = project_paths  # Make paths available at package level
-
-###############################################
-# services/__init__.py
-###############################################
-from utils.path_utils import project_paths
-from services import file_tagger
-from services import metadata_service
+# Make common functions available at package level
+__all__ = [
+    'read_json_config',
+    'safe_read_file',
+    'get_git_info'
+]
 
 ###############################################
 # utils/file_utils.py
 ###############################################
 import json
 from pathlib import Path
-from typing import Dict, Any
-from utils.path_utils import project_paths
-
+from typing import Dict, Any, Union
 
 def read_json_config(config_name: str) -> Dict[str, Any]:
-    """Read JSON configuration file"""
+    """
+    Read JSON configuration file from configs directory.
+    
+    Args:
+        config_name (str): Name of config file (e.g., 'bronze_config.json')
+        
+    Returns:
+        Dict[str, Any]: Configuration dictionary
+    """
     try:
-        config_path = project_paths.configs_dir / config_name
+        config_path = Path(__file__).parent.parent / 'configs' / config_name
         with open(config_path, 'r') as f:
             return json.load(f)
     except Exception as e:
         print(f"Error reading config {config_name}: {e}")
         return {}
 
+def safe_read_file(file_path: Union[str, Path]) -> str:
+    """
+    Safely read file content with error handling.
+    
+    Args:
+        file_path (Union[str, Path]): Path to file
+        
+    Returns:
+        str: File content or empty string if error
+    """
+    try:
+        with open(file_path, 'r') as f:
+            return f.read()
+    except Exception as e:
+        print(f"Error reading file {file_path}: {e}")
+        return ""
 
-if __name__ == '__main__':
-    config = read_json_config('bronze_config.json')
-    print("\nConfig contents:", config)
+###############################################
+# utils/git_utils.py
+###############################################
+from pathlib import Path
+from typing import Dict
+
+def get_git_info() -> Dict[str, str]:
+    """
+    Get git repository information.
+    
+    Returns:
+        Dict[str, str]: Dictionary containing git branch and project path
+    """
+    try:
+        project_root = Path(__file__).parent.parent
+        git_dir = project_root / '.git'
+        
+        # Read HEAD file
+        head_path = git_dir / 'HEAD'
+        if not head_path.exists():
+            return {'branch': 'unknown', 'commit': 'unknown'}
+            
+        with open(head_path, 'r') as f:
+            head_content = f.read().strip()
+            
+        # Parse branch name
+        branch = (
+            head_content.split('/')[-1]
+            if head_content.startswith('ref: refs/heads/')
+            else 'detached'
+        )
+            
+        return {
+            'branch': branch,
+            'path': str(project_root)
+        }
+    except Exception as e:
+        print(f"Error getting git info: {e}")
+        return {'branch': 'error', 'path': 'unknown'}
+
+###############################################
+# services/__init__.py
+###############################################
+"""
+Service modules for file processing and metadata management.
+"""
+from services.file_tagger import tag_file
+from services.metadata_service import MetadataService
+
+__all__ = [
+    'tag_file',
+    'MetadataService'
+]
 
 ###############################################
 # services/file_tagger.py
 ###############################################
-from utils.path_utils import project_paths
-from utils import file_utils
+import sys
+from pathlib import Path
 
+# Add project root to path and import path_setup
+file_dir = Path(__file__).resolve().parent
+project_root = file_dir.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+import path_setup
+from utils import file_utils, git_utils
 
 def tag_file(file_path: str, tag: str) -> str:
-    """Add a tag to file content"""
+    """
+    Add a tag and git info to file content.
+    
+    Args:
+        file_path (str): Path to file to tag
+        tag (str): Tag to add to content
+        
+    Returns:
+        str: Tagged content or empty string if error
+    """
     try:
-        full_path = project_paths.project_root / file_path
-        with open(full_path, 'r') as f:
-            content = f.read()
-        return f"{tag}: {content}"
+        # Get git info
+        git_info = git_utils.get_git_info()
+        
+        # Read file
+        content = file_utils.safe_read_file(file_path)
+        if not content:
+            return ""
+            
+        # Add tags
+        git_tag = f"branch:{git_info['branch']}"
+        return f"{tag} | {git_tag}: {content}"
+        
     except Exception as e:
         print(f"Error tagging file {file_path}: {e}")
         return ""
 
+# Test the module if run directly
+if __name__ == "__main__":
+    print("\nCurrent directory:", Path.cwd())
+    print("Project root:", project_root)
+    
+    test_file = project_root / "README.md"
+    if test_file.exists():
+        result = tag_file(str(test_file), "TEST")
+        print("\nTagged content:", result)
+    else:
+        print("\nTest file not found")
 
-if __name__ == '__main__':
-    test_file = 'README.md'
-    result = tag_file(test_file, "TEST")
-    print(f"\nTagged content for {test_file}:")
-    print(result)
+###############################################
+# services/metadata_service.py
+###############################################
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+class MetadataService:
+    """Service for managing file metadata"""
+    
+    def __init__(self, metadata_dir: Optional[str] = None):
+        """
+        Initialize metadata service.
+        
+        Args:
+            metadata_dir (Optional[str]): Directory for metadata storage
+        """
+        self.metadata_dir = Path(metadata_dir) if metadata_dir else Path(__file__).parent.parent / 'metadata'
+        self.metadata_dir.mkdir(exist_ok=True)
+
+    def get_metadata_path(self, file_path: str) -> Path:
+        """Get metadata file path for given file"""
+        base_name = Path(file_path).stem
+        return self.metadata_dir / f"{base_name}_metadata.json"
+
+    def save_metadata(self, file_path: str, metadata: Dict[str, Any]) -> bool:
+        """
+        Save metadata for a file.
+        
+        Args:
+            file_path (str): Path to the original file
+            metadata (Dict[str, Any]): Metadata to save
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            metadata_path = self.get_metadata_path(file_path)
+            
+            # Add timestamp
+            metadata['timestamp'] = datetime.now().isoformat()
+            metadata['original_file'] = str(file_path)
+            
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            return True
+            
+        except Exception as e:
+            print(f"Error saving metadata: {e}")
+            return False
+
+    def get_metadata(self, file_path: str) -> Dict[str, Any]:
+        """
+        Retrieve metadata for a file.
+        
+        Args:
+            file_path (str): Path to the original file
+            
+        Returns:
+            Dict[str, Any]: File metadata or empty dict if not found
+        """
+        try:
+            metadata_path = self.get_metadata_path(file_path)
+            
+            if not metadata_path.exists():
+                return {}
+                
+            with open(metadata_path, 'r') as f:
+                return json.load(f)
+                
+        except Exception as e:
+            print(f"Error reading metadata: {e}")
+            return {}
 
 ###############################################
 # bronze_etl.ipynb
 ###############################################
-# First cell:
-from utils.path_utils import project_paths
+import sys
+from pathlib import Path
+
+# Add project root to path if needed
+notebook_dir = Path().resolve()
+if str(notebook_dir) not in sys.path:
+    sys.path.insert(0, str(notebook_dir))
+
+# Import project modules
+import path_setup
+from services.file_tagger import tag_file
+from services.metadata_service import MetadataService
 from utils import file_utils
-from services import file_tagger
 
-# Verify paths
-print("Project paths:")
-for name, path in project_paths.paths.items():
-    print(f"{name}: {path}")
+# Initialize metadata service
+metadata_service = MetadataService()
 
-# Use utilities
+# Read config
 config = file_utils.read_json_config('bronze_config.json')
-tagged_content = file_tagger.tag_file('example.txt', "bronze")
+print("Config:", config)
+
+# Process a file
+input_file = "example.txt"
+tagged_content = tag_file(input_file, "bronze")
+
+if tagged_content:
+    print("\nTagged content:", tagged_content)
+    
+    # Save metadata
+    metadata = {
+        'tag': 'bronze',
+        'config_used': config,
+        'processed_at': datetime.now().isoformat()
+    }
+    metadata_service.save_metadata(input_file, metadata)
