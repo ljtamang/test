@@ -1,97 +1,160 @@
-# Add project root to path at the very beginning
-file_dir = Path(__file__).resolve().parent  # services/
-project_root = file_dir.parent              # project root
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+# path_setup.py
+import os
+import sys
+from pathlib import Path
 
-# Now we can import path_setup and other modules
-import path_setup
-from utils import file_utils, git_utils
-+++++++++++++
-# Project Structure:
-project_root/
-├── path_setup.py
-├── utils/
-│   ├── __init__.py
-│   ├── file_utils.py
-│   └── git_utils.py
-├── services/
-│   ├── __init__.py
-│   ├── file_tagger.py
-│   └── metadata_service.py
-├── configs/
-│   └── bronze_config.json
-├── bronze_etl.ipynb
-└── silver_etl.ipynb
+def setup_project_paths():
+    """
+    Sets up the project paths for Databricks environment
+    Returns the project root path
+    """
+    # In Databricks, you might want to use a mounted path or workspace path
+    try:
+        # If running in Databricks
+        project_root = "/Workspace/Repos/your_username/your_project"  # Adjust this path
+    except:
+        # If running locally
+        project_root = Path(__file__).parent.absolute()
+    
+    # Add project paths to Python path
+    paths_to_add = [
+        project_root,
+        os.path.join(project_root, 'utils'),
+        os.path.join(project_root, 'services')
+    ]
+    
+    for path in paths_to_add:
+        if path not in sys.path:
+            sys.path.append(str(path))
+    
+    return project_root
 
+# Execute path setup when imported
+PROJECT_ROOT = setup_project_paths()
 
+# ==============================================================================
 # utils/__init__.py
-from utils.file_utils import read_json_config, safe_read_file
-from utils.git_utils import get_git_info
+from utils.file_utils import *
+from utils.git_utils import *
 
-# Make common functions available at package level
 __all__ = [
-    'read_json_config',
-    'safe_read_file',
-    'get_git_info'
+    'read_file',
+    'write_file',
+    'get_git_info',
+    'get_latest_commit'
 ]
 
-# utils/file_utils.py
-import json
-from pathlib import Path
-from typing import Dict, Any, Union
-
-# utils/git_utils.py
-from pathlib import Path
-from typing import Dict
-
+# ==============================================================================
 # services/__init__.py
-from services.file_tagger import tag_file
-from services.metadata_service import MetadataService
+from services.file_tagger import *
+from services.metadata_service import *
 
 __all__ = [
     'tag_file',
-    'MetadataService'
+    'get_tags',
+    'extract_metadata',
+    'update_metadata'
 ]
 
+# ==============================================================================
 # services/file_tagger.py
 import os
-import sys
 from pathlib import Path
+from typing import List, Dict
+from pyspark.sql import SparkSession
 
-# Add project root to path
-import path_setup
+# Import from utils package
+from utils.file_utils import read_file, write_file
+from utils.git_utils import get_git_info
+
+# Import from services package
+from services.metadata_service import extract_metadata, update_metadata
+
+def tag_file(spark: SparkSession, file_path: str) -> Dict:
+    """Example function implementation"""
+    # Your implementation here
+    pass
+
+def get_tags(spark: SparkSession, file_path: str) -> List[str]:
+    """Example function implementation"""
+    # Your implementation here
+    pass
+
+# ==============================================================================
+# bronze_etl.ipynb
+# Databricks notebook source
+# MAGIC %md
+# MAGIC # Bronze ETL Notebook
+
+# COMMAND ----------
+# MAGIC %pip install your_required_packages
+
+# COMMAND ----------
+import sys
+from path_setup import setup_project_paths
+
+# Setup paths
+PROJECT_ROOT = setup_project_paths()
+
+# Create Spark session (already available in Databricks as 'spark')
+# from pyspark.sql import SparkSession
+# spark = SparkSession.builder.appName("bronze_etl").getOrCreate()
+
+# Import necessary modules
+from utils.file_utils import read_file
+from utils.git_utils import get_git_info
+from services.file_tagger import tag_file
+from services.metadata_service import extract_metadata
+
+# Your ETL code here
+# Example:
+# df = spark.read.format("delta").load("/path/to/bronze/table")
+
+# ==============================================================================
+# silver_etl.ipynb
+# Databricks notebook source
+# MAGIC %md
+# MAGIC # Silver ETL Notebook
+
+# COMMAND ----------
+# MAGIC %pip install your_required_packages
+
+# COMMAND ----------
+import sys
+from path_setup import setup_project_paths
+
+# Setup paths
+PROJECT_ROOT = setup_project_paths()
+
+# Import entire modules
 from utils import file_utils, git_utils
+from services import file_tagger, metadata_service
 
-# services/metadata_service.py
-import json
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, Any, Optional
+# Or import specific functions
+from utils.file_utils import read_file, write_file
+from services.metadata_service import update_metadata
 
-# bronze_etl.ipynb (First cell)
-import os
-import sys
-from pathlib import Path
+# Your ETL code here
+# Example:
+# bronze_df = spark.read.format("delta").load("/path/to/bronze/table")
+# silver_df = transform_to_silver(bronze_df)
+# silver_df.write.format("delta").mode("overwrite").save("/path/to/silver/table")
 
-# Import project modules
-import path_setup
-from utils.file_utils import read_json_config, safe_read_file
-from utils.git_utils import get_git_info
-from services.file_tagger import tag_file
-from services.metadata_service import MetadataService
+# ==============================================================================
+# Additional Databricks-specific considerations:
 
-# silver_etl.ipynb (First cell)
-import os
-import sys
-from pathlib import Path
+# 1. To use this in Databricks:
+#    - Upload these files to your Databricks workspace or use Databricks Repos
+#    - Update the project_root path in path_setup.py to match your workspace structure
+#    - Install any required packages using %pip magic command
 
-# Import project modules
-import path_setup
-from utils.file_utils import read_json_config, safe_read_file
-from utils.git_utils import get_git_info
-from services.file_tagger import tag_file
-from services.metadata_service import MetadataService
-    print("\nPython path:")
-    for path in sys.path:
-        print(f"- {path}")
+# 2. For production:
+#    - Consider using Databricks Workflows for orchestration
+#    - Use Databricks Secrets for sensitive information
+#    - Implement proper error handling and logging
+
+# 3. Best practices:
+#    - Use Delta Lake for all table operations
+#    - Implement proper schema evolution strategies
+#    - Use DBUtils for file operations when possible
+#    - Leverage Databricks widgets for parameters
