@@ -15,45 +15,73 @@ project_root/
 └── silver_etl.ipynb
 
 
-# path_setup.py
+# utils/__init__.py
+from utils.file_utils import read_json_config, safe_read_file
+from utils.git_utils import get_git_info
+
+# Make common functions available at package level
+__all__ = [
+    'read_json_config',
+    'safe_read_file',
+    'get_git_info'
+]
+
+# utils/file_utils.py
+import json
+from pathlib import Path
+from typing import Dict, Any, Union
+
+# utils/git_utils.py
+from pathlib import Path
+from typing import Dict
+
+# services/__init__.py
+from services.file_tagger import tag_file
+from services.metadata_service import MetadataService
+
+__all__ = [
+    'tag_file',
+    'MetadataService'
+]
+
+# services/file_tagger.py
 import os
 import sys
 from pathlib import Path
 
-def setup_project_path():
-    """
-    Add project root to Python path if not already present.
-    Handles both Databricks and local execution contexts.
-    """
-    try:
-        # Try Databricks context
-        from pyspark.dbutils import DBUtils
-        from pyspark.sql import SparkSession
+# Add project root to path
+import path_setup
+from utils import file_utils, git_utils
 
-        spark = SparkSession.builder.getOrCreate()
-        dbutils = DBUtils(spark)
-        
-        # Get notebook path
-        notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getPath().get()
-        project_root = Path(notebook_path).parent
-        
-    except Exception as e:
-        # Fallback to current directory if not in Databricks
-        project_root = Path(os.getcwd())
-    
-    project_root_str = str(project_root)
-    
-    if project_root_str not in sys.path:
-        sys.path.insert(0, project_root_str)
-        print(f"Added to Python path: {project_root_str}")
-    
-    return project_root
+# services/metadata_service.py
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, Optional
 
-# Run setup when this module is imported
-project_root = setup_project_path()
+# bronze_etl.ipynb (First cell)
+import os
+import sys
+from pathlib import Path
 
-if __name__ == "__main__":
-    print("\nProject root:", project_root)
+# Import project modules
+import path_setup
+from utils.file_utils import read_json_config, safe_read_file
+from utils.git_utils import get_git_info
+from services.file_tagger import tag_file
+from services.metadata_service import MetadataService
+
+# silver_etl.ipynb (First cell)
+import os
+import sys
+from pathlib import Path
+
+# Import project modules
+import path_setup
+from utils.file_utils import read_json_config, safe_read_file
+from utils.git_utils import get_git_info
+from services.file_tagger import tag_file
+from services.metadata_service import MetadataService
     print("\nPython path:")
     for path in sys.path:
         print(f"- {path}")
