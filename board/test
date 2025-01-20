@@ -1,67 +1,102 @@
-from typing import List, Optional, Union
-from pathlib import Path
+from typing import List, Dict, Any, Union
+import json
 
-def get_files_from_directories(
-    base_path: Union[str, Path],
-    directories: List[str], 
-    file_types: Optional[List[str]] = None
-) -> tuple[List[str], List[str]]:
+def filter_files_by_keyword_tags(
+    tagged_files: List[Dict[str, Any]], 
+    target_keywords: Union[str, List[str]]
+) -> List[Dict[str, Any]]:
     """
-    Retrieve all files from multiple directories under a base path that match the specified file types.
-    Continues processing even if some directories are invalid.
+    Filter files based on specified keyword tags.
     
     Args:
-        base_path (Union[str, Path]): The root directory path where all directories are located.
-        directories (List[str]): List of directory names (not full paths) to search in.
-            These are relative to the base_path.
-        file_types (Optional[List[str]], optional): List of file extensions to filter by.
-            If None, all files will be included. Defaults to None.
-            Example: ['.txt', '.pdf', '.doc']
-    
+        tagged_files (List[Dict[str, Any]]): List of dictionaries containing file information
+            Each dictionary should have:
+                - file_path (str): Path to the file
+                - tags (List[Dict]): List of tag dictionaries, each containing:
+                    - keyword_tag (str, optional): Keyword-based tag
+                    - ai_tag (str, optional): AI-generated tag
+                    - score (float): Score/confidence for the tag
+        
+        target_keywords (Union[str, List[str]]): Single keyword tag or list of keyword tags to filter by
+        
     Returns:
-        tuple[List[str], List[str]]: A tuple containing:
-            - List of file paths that match the criteria
-            - List of invalid directory names that were skipped
-            
-    Raises:
-        ValueError: If the base_path doesn't exist or is not a directory
+        List[Dict[str, Any]]: Filtered list of file dictionaries that contain any of the target keyword tags
         
-    Example:
-        >>> base = '/home/user/projects'
-        >>> dirs = ['docs', 'invalid_dir', 'src']
-        >>> file_types = ['.txt', '.pdf']
-        >>> files, invalid_dirs = get_files_from_directories(base, dirs, file_types)
-        >>> print(f"Found files: {files}")
-        >>> print(f"Invalid directories: {invalid_dirs}")
+    Examples:
+        >>> files = [
+        ...     {
+        ...         "file_path": "path/to/file1",
+        ...         "tags": [
+        ...             {"keyword_tag": "research-findings", "score": 0},
+        ...             {"ai_tag": "tag1", "score": 3}
+        ...         ]
+        ...     }
+        ... ]
+        >>> filter_files_by_keyword_tags(files, "research-findings")
+        [{'file_path': 'path/to/file1', 'tags': [...]}]
     """
-    # Convert base path to Path object and validate it
-    base_path = Path(base_path) if isinstance(base_path, str) else base_path
-    if not base_path.exists() or not base_path.is_dir():
-        raise ValueError(f"Base path is not a valid directory: {base_path}")
+    # Convert single keyword to list for consistent processing
+    if isinstance(target_keywords, str):
+        target_keywords = [target_keywords]
     
-    all_files = []
-    invalid_directories = []
+    # Validate input
+    if not tagged_files:
+        return []
     
-    for directory in directories:
-        # Combine base path with directory name
-        dir_path = base_path / directory
+    if not target_keywords:
+        raise ValueError("Target keywords cannot be empty")
         
-        # Check if path is a valid directory
-        if not dir_path.exists() or not dir_path.is_dir():
-            invalid_directories.append(directory)  # Store just the directory name, not full path
+    # Filter files
+    filtered_files = []
+    
+    for file_info in tagged_files:
+        # Validate file info structure
+        if 'tags' not in file_info:
             continue
             
-        try:
-            # Use the existing list_files function to get files from this directory
-            files = list_files(str(dir_path), file_types)
-            all_files.extend(files)
-        except Exception as e:
-            # If list_files fails for any reason, add to invalid directories
-            invalid_directories.append(directory)
-            continue
+        # Extract all keyword tags from the file
+        file_keyword_tags = [
+            tag.get('keyword_tag') 
+            for tag in file_info['tags']
+            if 'keyword_tag' in tag
+        ]
+        
+        # Check if any of the target keywords match
+        if any(keyword in file_keyword_tags for keyword in target_keywords):
+            filtered_files.append(file_info)
     
-    # If any directories were invalid, print a warning
-    if invalid_directories:
-        print(f"Warning: The following directories were invalid or inaccessible: {invalid_directories}")
+    return filtered_files
+
+# Example usage:
+if __name__ == "__main__":
+    # Sample data
+    sample_files = [
+        {
+            "file_path": "path/to/file1",
+            "tags": [
+                {"keyword_tag": "research-findings", "score": 0},
+                {"ai_tag": "tag1", "score": 3}
+            ]
+        },
+        {
+            "file_path": "path/to/file2",
+            "tags": [
+                {"keyword_tag": "other", "score": 0},
+                {"ai_tag": "tag1", "score": 3}
+            ]
+        }
+    ]
     
-    return all_files, invalid_directories
+    # Filter with single keyword
+    results_single = filter_files_by_keyword_tags(
+        sample_files, 
+        "research-findings"
+    )
+    print("Single keyword filter:", json.dumps(results_single, indent=2))
+    
+    # Filter with multiple keywords
+    results_multiple = filter_files_by_keyword_tags(
+        sample_files, 
+        ["research-findings", "other"]
+    )
+    print("Multiple keywords filter:", json.dumps(results_multiple, indent=2))
