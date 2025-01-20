@@ -1,140 +1,3 @@
-# utils/path_utils.py
-import os
-import sys
-from pathlib import Path
-from typing import Optional
-
-
-class ProjectPathManager:
-    _instance: Optional['ProjectPathManager'] = None
-    _is_initialized = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        if not self._is_initialized:
-            self.project_root = self._resolve_project_root()
-            self._setup_paths()
-            ProjectPathManager._is_initialized = True
-
-    def _resolve_project_root(self) -> Path:
-        """
-        Resolve project root directory from any context:
-        1. Running .py files directly from utils/services
-        2. Running notebooks from notebooks/
-        3. Running in interactive Python/IPython
-        4. Running in Databricks notebooks
-        """
-        try:
-            # Try Databricks notebook context first
-            import dbutils.notebook
-            notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getPath().get()
-            workspace_dir = Path(notebook_path).parent
-            project_dir = workspace_dir.parent
-            if self._is_project_root(project_dir):
-                return project_dir
-        except:
-            pass
-
-        # Get the current file's location
-        current_file = self._get_current_file()
-        current_dir = current_file.parent
-        
-        # If we're in utils/services/notebooks, go up one level
-        if current_dir.name in ['utils', 'services', 'notebooks']:
-            potential_root = current_dir.parent
-            if self._is_project_root(potential_root):
-                return potential_root
-        
-        # Search upwards for project root
-        search_dir = current_dir
-        while search_dir != search_dir.parent:
-            if self._is_project_root(search_dir):
-                return search_dir
-            search_dir = search_dir.parent
-            
-        raise RuntimeError(
-            "Could not find project root. Ensure you're running from within "
-            "the project structure and all required directories exist."
-        )
-
-    def _get_current_file(self) -> Path:
-        """Get current file path from any context."""
-        # Try different ways to get the current file location
-        try:
-            # When running as a script
-            if hasattr(sys.modules['__main__'], '__file__'):
-                return Path(os.path.abspath(sys.modules['__main__'].__file__))
-        except:
-            pass
-
-        try:
-            # When imported as a module
-            return Path(os.path.abspath(__file__))
-        except:
-            pass
-
-        try:
-            # In Jupyter/IPython
-            import IPython
-            ipython = IPython.get_ipython()
-            if ipython is not None and hasattr(ipython, 'kernel'):
-                return Path(os.getcwd())
-        except:
-            pass
-
-        # Fallback to current directory
-        return Path(os.getcwd())
-
-    def _is_project_root(self, path: Path) -> bool:
-        """Check if path is project root by verifying required directories."""
-        required_dirs = ['utils', 'services', 'notebooks', 'configs']
-        try:
-            return all(os.path.exists(path / dir_name) for dir_name in required_dirs)
-        except:
-            return False
-
-    def _setup_paths(self):
-        """Set up project paths and add to Python path."""
-        self.utils_dir = self.project_root / 'utils'
-        self.services_dir = self.project_root / 'services'
-        self.notebooks_dir = self.project_root / 'notebooks'
-        self.configs_dir = self.project_root / 'configs'
-
-        # Add project root to Python path if not already there
-        project_root_str = str(self.project_root)
-        if project_root_str not in sys.path:
-            sys.path.insert(0, project_root_str)
-
-    def get_dbfs_path(self, path: Path | str) -> str:
-        """Convert to DBFS path if needed."""
-        path_str = str(path)
-        return f"/dbfs{path_str}" if not path_str.startswith('/dbfs/') else path_str
-
-    @property
-    def paths(self) -> dict:
-        """Get all project paths."""
-        return {
-            'project_root': self.project_root,
-            'utils_dir': self.utils_dir,
-            'services_dir': self.services_dir,
-            'notebooks_dir': self.notebooks_dir,
-            'configs_dir': self.configs_dir
-        }
-
-
-# Create global instance
-project_paths = ProjectPathManager()
-
-# For direct script execution
-if __name__ == '__main__':
-    print("\nProject Paths:")
-    for name, path in project_paths.paths.items():
-        print(f"{name}: {path}")
-
 # utils/__init__.py
 try:
     from utils.path_utils import project_paths
@@ -145,38 +8,35 @@ except ImportError:
     import file_utils
     import git_utils
 
+# Make path manager available at package level
 paths = project_paths
 
-# utils/file_utils.py
-import json
-from typing import Dict, Any
+
+# services/__init__.py
 try:
     from utils.path_utils import project_paths
+    from services import file_tagger
+    from services import metadata_service
 except ImportError:
-    from path_utils import project_paths
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from utils.path_utils import project_paths
+    import file_tagger
+    import metadata_service
 
-
-def read_json_config(config_name: str) -> Dict[str, Any]:
-    """Read and parse JSON configuration file."""
-    try:
-        config_path = project_paths.configs_dir / config_name
-        with open(config_path, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error reading config {config_name}: {e}")
-        return {}
-
-
-if __name__ == '__main__':
-    # This works when run directly
-    config = read_json_config('bronze_config.json')
-    print("\nConfig contents:", config)
 
 # services/file_tagger.py
+import os
+from pathlib import Path
+from typing import Optional
+
 try:
+    # Try importing as a package first
     from utils.path_utils import project_paths
     from utils import file_utils
 except ImportError:
+    # If that fails, add project root to path and try again
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -197,7 +57,48 @@ def tag_file(file_path: str, tag: str) -> str:
 
 
 if __name__ == '__main__':
-    # This works when run directly
+    # Test the function when run directly
+    print("\nProject paths:")
+    for name, path in project_paths.paths.items():
+        print(f"{name}: {path}")
+
     test_file = 'README.md'
     result = tag_file(test_file, "TEST")
-    print("\nTagged content:", result)
+    print(f"\nTagged content for {test_file}:")
+    print(result)
+
+
+# notebooks/bronze_full_ingestion.ipynb
+# Cell 1: Setup paths and imports
+try:
+    from utils.path_utils import project_paths
+    from utils import file_utils, git_utils
+    from services import file_tagger
+except Exception as e:
+    import sys
+    from pathlib import Path
+    # Add project root to path
+    notebook_dir = Path().absolute()
+    project_root = notebook_dir.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    # Try imports again
+    from utils.path_utils import project_paths
+    from utils import file_utils, git_utils
+    from services import file_tagger
+
+# Verify paths are set up correctly
+print("Project paths:")
+for name, path in project_paths.paths.items():
+    print(f"{name}: {path}")
+
+# Cell 2: Use the utilities
+config = file_utils.read_json_config('bronze_config.json')
+git_branch = git_utils.get_git_branch()
+print(f"\nCurrent git branch: {git_branch}")
+print(f"Configuration: {config}")
+
+# Cell 3: Process files
+input_file = 'example.txt'  # Replace with your file
+tagged_content = file_tagger.tag_file(input_file, "bronze")
+print(f"\nTagged content: {tagged_content}")
