@@ -1,3 +1,13 @@
+# Add project root to path at the very beginning
+file_dir = Path(__file__).resolve().parent  # services/
+project_root = file_dir.parent              # project root
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# Now we can import path_setup and other modules
+import path_setup
+from utils import file_utils, git_utils
++++++++++++++
 # Project Structure:
 project_root/
 ├── path_setup.py
