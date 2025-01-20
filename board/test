@@ -1,28 +1,14 @@
-from typing import List, Dict, Any, Union
-import json
-
-def filter_files_by_keyword_tags(
-    tagged_files: List[Dict[str, Any]], 
-    target_keywords: Union[str, List[str]]
-) -> List[Dict[str, Any]]:
+def extract_file_categories(files: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """
-    Filter files based on specified keyword tags.
+    Transform file data to extract file paths and their keyword tags into a simplified format.
     
     Args:
-        tagged_files (List[Dict[str, Any]]): List of dictionaries containing file information
-            Each dictionary should have:
-                - file_path (str): Path to the file
-                - tags (List[Dict]): List of tag dictionaries, each containing:
-                    - keyword_tag (str, optional): Keyword-based tag
-                    - ai_tag (str, optional): AI-generated tag
-                    - score (float): Score/confidence for the tag
-        
-        target_keywords (Union[str, List[str]]): Single keyword tag or list of keyword tags to filter by
+        files (List[Dict[str, Any]]): List of file dictionaries with paths and tags
         
     Returns:
-        List[Dict[str, Any]]: Filtered list of file dictionaries that contain any of the target keyword tags
+        List[Dict[str, str]]: List of dictionaries containing file_path and file_category
         
-    Examples:
+    Example:
         >>> files = [
         ...     {
         ...         "file_path": "path/to/file1",
@@ -32,71 +18,18 @@ def filter_files_by_keyword_tags(
         ...         ]
         ...     }
         ... ]
-        >>> filter_files_by_keyword_tags(files, "research-findings")
-        [{'file_path': 'path/to/file1', 'tags': [...]}]
+        >>> extract_file_categories(files)
+        [{'file_path': 'path/to/file1', 'file_category': 'research-findings'}]
     """
-    # Convert single keyword to list for consistent processing
-    if isinstance(target_keywords, str):
-        target_keywords = [target_keywords]
-    
-    # Validate input
-    if not tagged_files:
-        return []
-    
-    if not target_keywords:
-        raise ValueError("Target keywords cannot be empty")
-        
-    # Filter files
-    filtered_files = []
-    
-    for file_info in tagged_files:
-        # Validate file info structure
-        if 'tags' not in file_info:
-            continue
-            
-        # Extract all keyword tags from the file
-        file_keyword_tags = [
-            tag.get('keyword_tag') 
-            for tag in file_info['tags']
-            if 'keyword_tag' in tag
-        ]
-        
-        # Check if any of the target keywords match
-        if any(keyword in file_keyword_tags for keyword in target_keywords):
-            filtered_files.append(file_info)
-    
-    return filtered_files
-
-# Example usage:
-if __name__ == "__main__":
-    # Sample data
-    sample_files = [
+    return [
         {
-            "file_path": "path/to/file1",
-            "tags": [
-                {"keyword_tag": "research-findings", "score": 0},
-                {"ai_tag": "tag1", "score": 3}
-            ]
-        },
-        {
-            "file_path": "path/to/file2",
-            "tags": [
-                {"keyword_tag": "other", "score": 0},
-                {"ai_tag": "tag1", "score": 3}
-            ]
+            "file_path": file["file_path"],
+            "file_category": next(
+                (tag["keyword_tag"] 
+                 for tag in file["tags"] 
+                 if "keyword_tag" in tag),
+                None
+            )
         }
+        for file in files
     ]
-    
-    # Filter with single keyword
-    results_single = filter_files_by_keyword_tags(
-        sample_files, 
-        "research-findings"
-    )
-    print("Single keyword filter:", json.dumps(results_single, indent=2))
-    
-    # Filter with multiple keywords
-    results_multiple = filter_files_by_keyword_tags(
-        sample_files, 
-        ["research-findings", "other"]
-    )
-    print("Multiple keywords filter:", json.dumps(results_multiple, indent=2))
