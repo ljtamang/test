@@ -1,46 +1,43 @@
-import os
-import json
+from typing import List, Optional, Union
 from pathlib import Path
 
-
-class Config:
+def get_files_from_directories(
+    directories: List[Union[str, Path]], 
+    file_types: Optional[List[str]] = None
+) -> List[str]:
     """
-    Wrapper for configuration data to allow attribute-style access.
-    """
-    def __init__(self, config_dict):
-        self._config_dict = config_dict
-
-    def __getattr__(self, name):
-        if name in self._config_dict:
-            value = self._config_dict[name]
-            # Recursively wrap dictionaries to allow nested attribute access
-            if isinstance(value, dict):
-                return Config(value)
-            return value
-        raise AttributeError(f"Configuration has no attribute '{name}'.")
-
-    def __repr__(self):
-        return f"Config({self._config_dict})"
-
-
-def load_config(config_path):
-    """
-    Loads a JSON configuration file given its full path and returns it as a Config object.
-
+    Retrieve all files from multiple directories that match the specified file types.
+    
     Args:
-        config_path (str or Path): Full path to the JSON configuration file.
-
+        directories (List[Union[str, Path]]): List of directory paths to search in.
+            Paths can be provided as strings or Path objects.
+        file_types (Optional[List[str]], optional): List of file extensions to filter by.
+            If None, all files will be included. Defaults to None.
+            Example: ['.txt', '.pdf', '.doc']
+    
     Returns:
-        Config: Configuration wrapped for attribute-style access.
+        List[str]: A list of file paths that match the criteria.
+        
+    Raises:
+        ValueError: If any of the provided directories don't exist.
+        
+    Example:
+        >>> dirs = ['/path/to/dir1', '/path/to/dir2']
+        >>> file_types = ['.txt', '.pdf']
+        >>> files = get_files_from_directories(dirs, file_types)
     """
-    # Resolve the full path
-    config_path = Path(config_path).resolve()
-
-    if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
-
-    # Load JSON content
-    with open(config_path, "r") as f:
-        config_data = json.load(f)
-
-    return Config(config_data)
+    all_files = []
+    
+    for directory in directories:
+        # Convert string path to Path object if necessary
+        dir_path = Path(directory) if isinstance(directory, str) else directory
+        
+        # Validate directory exists
+        if not dir_path.exists() or not dir_path.is_dir():
+            raise ValueError(f"Directory does not exist: {directory}")
+            
+        # Use the existing list_files function to get files from this directory
+        files = list_files(str(dir_path), file_types)
+        all_files.extend(files)
+    
+    return all_files
