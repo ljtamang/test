@@ -1,35 +1,42 @@
-def extract_file_categories(files: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+def get_files_metadata(
+    target_files: list[dict],
+    local_repo_path: str,
+    blob_storage_path: str
+) -> list[dict]:
     """
-    Transform file data to extract file paths and their keyword tags into a simplified format.
-    
+    Get metadata for a list of target files by calling get_metadata for each file.
+
     Args:
-        files (List[Dict[str, Any]]): List of file dictionaries with paths and tags
-        
+        target_files (list[dict]): List of dictionaries containing file information.
+            Each dictionary should have 'file_path' and 'file_category' keys.
+        local_repo_path (str): Path to the local repository.
+        blob_storage_path (str): Path to blob storage.
+
     Returns:
-        List[Dict[str, str]]: List of dictionaries containing file_path and file_category
-        
+        list[dict]: List of metadata dictionaries for each processed file.
+
     Example:
-        >>> files = [
-        ...     {
-        ...         "file_path": "path/to/file1",
-        ...         "tags": [
-        ...             {"keyword_tag": "research-findings", "score": 0},
-        ...             {"ai_tag": "tag1", "score": 3}
-        ...         ]
-        ...     }
-        ... ]
-        >>> extract_file_categories(files)
-        [{'file_path': 'path/to/file1', 'file_category': 'research-findings'}]
+        target_files = [
+            {
+                "file_path": "path/to/file1",
+                "file_category": "research-findings"
+            },
+            {
+                "file_path": "path/to/file2",
+                "file_category": "other"
+            }
+        ]
+        metadata_list = get_files_metadata(target_files, "/local/repo", "/blob/storage")
     """
-    return [
-        {
-            "file_path": file["file_path"],
-            "file_category": next(
-                (tag["keyword_tag"] 
-                 for tag in file["tags"] 
-                 if "keyword_tag" in tag),
-                None
-            )
-        }
-        for file in files
-    ]
+    metadata_list = []
+
+    for file_info in target_files:
+        # Extract file information
+        file_metadata = get_metadata(
+            file_info,
+            local_repo_path,
+            blob_storage_path
+        )
+        metadata_list.append(file_metadata)
+
+    return metadata_list
