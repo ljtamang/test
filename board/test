@@ -1,6 +1,46 @@
-# Add project root to sys.path for imports
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+import os
+import json
+from pathlib import Path
 
-from utils.file_utility import load_file
+
+class Config:
+    """
+    Wrapper for configuration data to allow attribute-style access.
+    """
+    def __init__(self, config_dict):
+        self._config_dict = config_dict
+
+    def __getattr__(self, name):
+        if name in self._config_dict:
+            value = self._config_dict[name]
+            # Recursively wrap dictionaries to allow nested attribute access
+            if isinstance(value, dict):
+                return Config(value)
+            return value
+        raise AttributeError(f"Configuration has no attribute '{name}'.")
+
+    def __repr__(self):
+        return f"Config({self._config_dict})"
+
+
+def load_config(config_path):
+    """
+    Loads a JSON configuration file given its full path and returns it as a Config object.
+
+    Args:
+        config_path (str or Path): Full path to the JSON configuration file.
+
+    Returns:
+        Config: Configuration wrapped for attribute-style access.
+    """
+    # Resolve the full path
+    config_path = Path(config_path).resolve()
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+
+    # Load JSON content
+    with open(config_path, "r") as f:
+        config_data = json.load(f)
+
+    return Config(config_data)
