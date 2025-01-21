@@ -2,76 +2,64 @@ from azure.storage.blob import BlobServiceClient
 import json
 from datetime import datetime
 
-def save_metadata_to_azure(metadata_list: list, 
-                         connection_string: str,
-                         container_name: str,
-                         folder_path: str,
-                         file_name: str = None) -> str:
-    """
-    Save metadata list as JSON to specific folder in Azure Blob container
-    
-    Args:
-        metadata_list (list): List of metadata dictionaries
-        connection_string (str): Azure Storage connection string
-        container_name (str): Name of the container
-        folder_path (str): Destination folder path inside container (e.g., 'metadata/2024')
-        file_name (str, optional): Custom file name for the metadata file. If not provided, 
-                                 uses timestamp-based name
-    
-    Returns:
-        str: URL of the uploaded blob
-    """
-    try:
-        # Format the JSON with proper indentation
-        formatted_json = json.dumps(metadata_list, indent=2, ensure_ascii=False)
-        
-        # Clean up folder path
-        folder_path = folder_path.strip('/')
-        
-        # Generate blob name with custom file name or timestamp
-        if file_name:
-            # Ensure .json extension
-            if not file_name.endswith('.json'):
-                file_name += '.json'
-            blob_name = f"{folder_path}/{file_name}"
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            blob_name = f"{folder_path}/metadata_{timestamp}.json"
-        
-        # Initialize client and upload
-        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-        container_client = blob_service_client.get_container_client(container_name)
-        blob_client = container_client.get_blob_client(blob_name)
-        
-        blob_client.upload_blob(formatted_json, overwrite=True)
-        return blob_client.url
-        
-    except Exception as e:
-        print(f"Error uploading metadata: {str(e)}")
-        raise
+def upload_metadata_to_azure(metadata_list: list,
+                          connection_string: str, 
+                          container_name: str,
+                          folder_path: str,
+                          file_name: str = None) -> str:
+   """
+   Upload metadata list as JSON to Azure Blob Storage
+   
+   Args:
+       metadata_list (list): List of metadata dictionaries
+       connection_string (str): Azure Storage connection string
+       container_name (str): Name of the container 
+       folder_path (str): Destination folder path inside container
+       file_name (str, optional): Name of the metadata file (will add .json if needed)
+   
+   Returns:
+       str: URL of the uploaded blob
+   """
+   try:
+       # Format metadata as JSON
+       formatted_json = json.dumps(metadata_list, indent=2, ensure_ascii=False)
+       
+       # Prepare blob path
+       folder_path = folder_path.strip('/')
+       if file_name:
+           if not file_name.endswith('.json'):
+               file_name += '.json'
+           blob_name = f"{folder_path}/{file_name}"
+       else:
+           timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+           blob_name = f"{folder_path}/metadata_{timestamp}.json"
+       
+       # Upload to Azure
+       blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+       container_client = blob_service_client.get_container_client(container_name)
+       blob_client = container_client.get_blob_client(blob_name)
+       
+       blob_client.upload_blob(formatted_json, overwrite=True)
+       return blob_client.url
+       
+   except Exception as e:
+       print(f"Error uploading metadata: {str(e)}")
+       raise
 
-# Example usage with custom file name
+# Example usage
 metadata_list = [
-    {
-        "document_id": "DOC2024001",
-        "file_name": "Financial_Report.pdf",
-        "created_date": "2024-01-20T09:00:00"
-    }
+   {
+       "document_id": "DOC2024001",
+       "file_name": "Financial_Report.pdf",
+       "created_date": "2024-01-20T09:00:00"
+   }
 ]
 
-# With custom file name
-url1 = save_metadata_to_azure(
-    metadata_list=metadata_list,
-    connection_string="your_connection_string",
-    container_name="documents",
-    folder_path="metadata/finance/2024",
-    file_name="finance_metadata_v1"  # .json will be added automatically
-)
-
-# Without file name (uses timestamp)
-url2 = save_metadata_to_azure(
-    metadata_list=metadata_list,
-    connection_string="your_connection_string",
-    container_name="documents",
-    folder_path="metadata/finance/2024"
+# Upload with custom filename
+url = upload_metadata_to_azure(
+   metadata_list=metadata_list,
+   connection_string="your_connection_string",
+   container_name="documents",
+   folder_path="metadata/finance/2024",
+   file_name="finance_metadata"
 )
