@@ -50,7 +50,7 @@ def upload_single_file(
     base_path_to_ignore: str,
     destination_folder: str = None,
     workers: int = 4,
-    max_block_size: int = 4 * 1024 * 1024
+    maxsize_bytes: int = 4 * 1024 * 1024
 ) -> Dict[str, Any]:
     """
     Upload a single file to Azure Blob Storage.
@@ -61,7 +61,7 @@ def upload_single_file(
         base_path_to_ignore (str): Base path to remove from file_path
         destination_folder (str, optional): Destination folder in container
         workers (int): Number of concurrent upload threads
-        max_block_size (int): Size of upload blocks in bytes
+        maxsize_bytes (int): Maximum size of upload blocks in bytes
         
     Returns:
         Dict[str, Any]: Upload result details
@@ -82,9 +82,8 @@ def upload_single_file(
         blob_path = f"{destination_folder.strip('/')}/{relative_path}" if destination_folder else relative_path
         blob_path = blob_path.replace('\\', '/')
         
-        # Get file size and calculate optimal block size
+        # Get file size
         file_size = os.path.getsize(file_path)
-        file_block_size = min(max_block_size, max(1024 * 1024, file_size // 10000))
         
         # Upload file
         blob_client = container_client.get_blob_client(blob_path)
@@ -92,8 +91,7 @@ def upload_single_file(
             blob_client.upload_blob(
                 data,
                 overwrite=True,
-                max_concurrency=workers,
-                max_block_size=file_block_size
+                maxsize_bytes=maxsize_bytes
             )
         
         logger.info(f"Uploaded {file_path} to {blob_path}")
@@ -197,7 +195,7 @@ if __name__ == "__main__":
         "base_path_to_ignore": "/tmp/va.gov-team"
     }
     
-    # Example: Upload single file
+    # Example: Upload files
     files_to_upload = [
         "/tmp/va.gov-team/products/avs/finding.md",
         "/tmp/va.gov-team/products/avs/design/mockups.pdf"
