@@ -1,65 +1,237 @@
 from azure.storage.blob import BlobServiceClient
-import json
+from typing import List, Dict, Any, Tuple
+import os
+import logging
+import psutil
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import math
 
-def upload_metadata_to_azure(metadata_list: list,
-                          connection_string: str, 
-                          container_name: str,
-                          folder_path: str,
-                          file_name: str = None) -> str:
-   """
-   Upload metadata list as JSON to Azure Blob Storage
-   
-   Args:
-       metadata_list (list): List of metadata dictionaries
-       connection_string (str): Azure Storage connection string
-       container_name (str): Name of the container 
-       folder_path (str): Destination folder path inside container
-       file_name (str, optional): Name of the metadata file (will add .json if needed)
-   
-   Returns:
-       str: URL of the uploaded blob
-   """
-   try:
-       # Format metadata as JSON
-       formatted_json = json.dumps(metadata_list, indent=2, ensure_ascii=False)
-       
-       # Prepare blob path
-       folder_path = folder_path.strip('/')
-       if file_name:
-           if not file_name.endswith('.json'):
-               file_name += '.json'
-           blob_name = f"{folder_path}/{file_name}"
-       else:
-           timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-           blob_name = f"{folder_path}/metadata_{timestamp}.json"
-       
-       # Upload to Azure
-       blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-       container_client = blob_service_client.get_container_client(container_name)
-       blob_client = container_client.get_blob_client(blob_name)
-       
-       blob_client.upload_blob(formatted_json, overwrite=True)
-       return blob_client.url
-       
-   except Exception as e:
-       print(f"Error uploading metadata: {str(e)}")
-       raise
+def calculate_optimal_workers(file_paths: List[str], 
+                            min_workers: int = 2,
+                            max_workers: int = 32) -> Tuple[int, int]:
+    """
+    Calculate optimal number of workers and chunk size based on system resources and workload.
+    """
+    cpu_count = psutil.cpu_count(logical=False)
+    available_memory = psutil.virtual_memory().available
+    
+    total_files = len(file_paths)
+    file_sizes = [os.path.getsize(f) for f in file_paths if os.path.exists(f)]
+    
+    if not file_sizes:
+        return min_workers, 4 * 1024 * 1024
+    
+    avg_file_size = sum(file_sizes) / len(file_sizes)
+    max_file_size = max(file_sizes)
+    
+    base_workers = cpu_count * 2
+    if total_files < base_workers:
+        base_workers = max(min_workers, total_files)
+    
+    memory_based_workers = int(available_memory / (max_file_size * 2))
+    size_adjusted_workers = max(min_workers, cpu_count) if avg_file_size > 100 * 1024 * 1024 else base_workers
+    
+    optimal_workers = min(base_workers, memory_based_workers, size_adjusted_workers, max_workers)
+    
+    # Calculate chunk size
+    if avg_file_size < 1024 * 1024:
+        chunk_size = 1 * 1024 * 1024
+    elif avg_file_size < 10 * 1024 * 1024:
+        chunk_size = 4 * 1024 * 1024
+    else:
+        chunk_size = 8 * 1024 * 1024
+    
+    return max(min_workers, optimal_workers), chunk_size
+
+def upload_single_file(
+    file_path: str,
+    container_client: Any,
+    base_path_to_ignore: str,
+    destination_folder: str = None,
+    workers: int = 4,
+    chunk_size: int = 4 * 1024 * 1024
+) -> Dict[str, Any]:
+    """
+    Upload a single file to Azure Blob Storage.
+    
+    Args:
+        file_path (str): Path to the file to upload
+        container_client: Azure blob container client
+        base_path_to_ignore (str): Base path to remove from file_path
+        destination_folder (str, optional): Destination folder in container
+        workers (int): Number of concurrent upload threads
+        chunk_size (int): Size of upload chunks in bytes
+        
+    Returns:
+        Dict[str, Any]: Upload result details
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Normalize paths
+        file_path = os.path.normpath(file_path)
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        # Calculate relative path
+        if not file_path.startswith(base_path_to_ignore):
+            raise ValueError(f"File path {file_path} does not start with base path {base_path_to_ignore}")
+        
+        relative_path = file_path[len(base_path_to_ignore):].lstrip('/')
+        blob_path = f"{destination_folder.strip('/')}/{relative_path}" if destination_folder else relative_path
+        blob_path = blob_path.replace('\\', '/')
+        
+        # Get file size and calculate optimal chunk size
+        file_size = os.path.getsize(file_path)
+        file_chunk_size = min(chunk_size, max(1024 * 1024, file_size // 10000))
+        
+        # Upload file
+        blob_client = container_client.get_blob_client(blob_path)
+        with open(file_path, "rb") as data:
+            blob_client.upload_blob(
+                data,
+                overwrite=True,
+                max_concurrency=workers,
+                chunk_size=file_chunk_size
+            )
+        
+        logger.info(f"Uploaded {file_path} to {blob_path}")
+        
+        return {
+            "file_name": os.path.basename(file_path),
+            "original_path": file_path,
+            "blob_path": blob_path,
+            "status": "success",
+            "url": blob_client.url,
+            "size": file_size,
+            "error": None
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to upload {file_path}: {str(e)}")
+        return {
+            "file_name": os.path.basename(file_path),
+            "original_path": file_path,
+            "blob_path": blob_path if 'blob_path' in locals() else None,
+            "status": "failed",
+            "url": None,
+            "size": file_size if 'file_size' in locals() else None,
+            "error": str(e)
+        }
+
+def upload_files_to_azure_container(
+    file_paths: List[str],
+    connection_string: str,
+    container_name: str,
+    base_path_to_ignore: str,
+    destination_folder: str = None,
+    min_workers: int = 2,
+    max_workers: int = 32
+) -> List[Dict[str, Any]]:
+    """
+    Upload multiple files to Azure Blob Storage container with automatic worker optimization.
+    
+    Args:
+        file_paths (List[str]): List of file paths to upload
+        connection_string (str): Azure Storage connection string
+        container_name (str): Name of the blob container
+        base_path_to_ignore (str): Base path to remove from file_paths
+        destination_folder (str, optional): Base folder path in container
+        min_workers (int, optional): Minimum number of workers
+        max_workers (int, optional): Maximum number of workers
+    """
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    # Calculate optimal workers and chunk size
+    optimal_workers, chunk_size = calculate_optimal_workers(
+        file_paths, 
+        min_workers=min_workers,
+        max_workers=max_workers
+    )
+    
+    logger.info(f"Optimized configuration: {optimal_workers} workers, {chunk_size/1024/1024}MB chunks")
+    
+    try:
+        # Initialize Azure clients
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        container_client = blob_service_client.get_container_client(container_name)
+        
+        if not container_client.exists():
+            container_client.create_container()
+            logger.info(f"Created container: {container_name}")
+        
+        # Upload files in parallel
+        results = []
+        with ThreadPoolExecutor(max_workers=optimal_workers) as executor:
+            future_to_file = {
+                executor.submit(
+                    upload_single_file,
+                    file_path,
+                    container_client,
+                    base_path_to_ignore,
+                    destination_folder,
+                    optimal_workers,
+                    chunk_size
+                ): file_path for file_path in file_paths
+            }
+            
+            for future in as_completed(future_to_file):
+                results.append(future.result())
+        
+        # Sort results (successes first)
+        results.sort(key=lambda x: x['status'] == 'failed')
+        return results
+        
+    except Exception as e:
+        logger.error(f"Blob storage operation failed: {str(e)}")
+        raise
 
 # Example usage
-metadata_list = [
-   {
-       "document_id": "DOC2024001",
-       "file_name": "Financial_Report.pdf",
-       "created_date": "2024-01-20T09:00:00"
-   }
-]
-
-# Upload with custom filename
-url = upload_metadata_to_azure(
-   metadata_list=metadata_list,
-   connection_string="your_connection_string",
-   container_name="documents",
-   folder_path="metadata/finance/2024",
-   file_name="finance_metadata"
-)
+if __name__ == "__main__":
+    # Configuration
+    config = {
+        "connection_string": "your_connection_string",
+        "container_name": "docs-container",
+        "base_path_to_ignore": "/tmp/va.gov-team"
+    }
+    
+    # Example 1: Upload multiple files
+    files_to_upload = [
+        "/tmp/va.gov-team/products/avs/research/finding.md",
+        "/tmp/va.gov-team/products/avs/design/mockups.pdf"
+    ]
+    
+    results = upload_files_to_azure_container(
+        file_paths=files_to_upload,
+        connection_string=config["connection_string"],
+        container_name=config["container_name"],
+        base_path_to_ignore=config["base_path_to_ignore"],
+        destination_folder="documentation"
+    )
+    
+    # Example 2: Upload single file directly
+    blob_service_client = BlobServiceClient.from_connection_string(config["connection_string"])
+    container_client = blob_service_client.get_container_client(config["container_name"])
+    
+    single_result = upload_single_file(
+        file_path="/tmp/va.gov-team/products/avs/research/finding.md",
+        container_client=container_client,
+        base_path_to_ignore=config["base_path_to_ignore"],
+        destination_folder="documentation",
+        workers=4,
+        chunk_size=4 * 1024 * 1024
+    )
+    
+    # Print results
+    print("\nUpload Results:")
+    print("-" * 50)
+    for result in results:
+        print(f"\nFile: {result['file_name']}")
+        print(f"Size: {result['size']/1024/1024:.2f} MB")
+        print(f"Status: {result['status']}")
+        if result['error']:
+            print(f"Error: {result['error']}")
+        else:
+            print(f"URL: {result['url']}")
