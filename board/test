@@ -1,42 +1,77 @@
-def get_files_metadata(
-    target_files: list[dict],
-    local_repo_path: str,
-    blob_storage_path: str
-) -> list[dict]:
-    """
-    Get metadata for a list of target files by calling get_metadata for each file.
+from azure.storage.blob import BlobServiceClient
+import json
+from datetime import datetime
 
+def save_metadata_to_azure(metadata_list: list, 
+                         connection_string: str,
+                         container_name: str,
+                         folder_path: str,
+                         file_name: str = None) -> str:
+    """
+    Save metadata list as JSON to specific folder in Azure Blob container
+    
     Args:
-        target_files (list[dict]): List of dictionaries containing file information.
-            Each dictionary should have 'file_path' and 'file_category' keys.
-        local_repo_path (str): Path to the local repository.
-        blob_storage_path (str): Path to blob storage.
-
+        metadata_list (list): List of metadata dictionaries
+        connection_string (str): Azure Storage connection string
+        container_name (str): Name of the container
+        folder_path (str): Destination folder path inside container (e.g., 'metadata/2024')
+        file_name (str, optional): Custom file name for the metadata file. If not provided, 
+                                 uses timestamp-based name
+    
     Returns:
-        list[dict]: List of metadata dictionaries for each processed file.
-
-    Example:
-        target_files = [
-            {
-                "file_path": "path/to/file1",
-                "file_category": "research-findings"
-            },
-            {
-                "file_path": "path/to/file2",
-                "file_category": "other"
-            }
-        ]
-        metadata_list = get_files_metadata(target_files, "/local/repo", "/blob/storage")
+        str: URL of the uploaded blob
     """
-    metadata_list = []
+    try:
+        # Format the JSON with proper indentation
+        formatted_json = json.dumps(metadata_list, indent=2, ensure_ascii=False)
+        
+        # Clean up folder path
+        folder_path = folder_path.strip('/')
+        
+        # Generate blob name with custom file name or timestamp
+        if file_name:
+            # Ensure .json extension
+            if not file_name.endswith('.json'):
+                file_name += '.json'
+            blob_name = f"{folder_path}/{file_name}"
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            blob_name = f"{folder_path}/metadata_{timestamp}.json"
+        
+        # Initialize client and upload
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        container_client = blob_service_client.get_container_client(container_name)
+        blob_client = container_client.get_blob_client(blob_name)
+        
+        blob_client.upload_blob(formatted_json, overwrite=True)
+        return blob_client.url
+        
+    except Exception as e:
+        print(f"Error uploading metadata: {str(e)}")
+        raise
 
-    for file_info in target_files:
-        # Extract file information
-        file_metadata = get_metadata(
-            file_info,
-            local_repo_path,
-            blob_storage_path
-        )
-        metadata_list.append(file_metadata)
+# Example usage with custom file name
+metadata_list = [
+    {
+        "document_id": "DOC2024001",
+        "file_name": "Financial_Report.pdf",
+        "created_date": "2024-01-20T09:00:00"
+    }
+]
 
-    return metadata_list
+# With custom file name
+url1 = save_metadata_to_azure(
+    metadata_list=metadata_list,
+    connection_string="your_connection_string",
+    container_name="documents",
+    folder_path="metadata/finance/2024",
+    file_name="finance_metadata_v1"  # .json will be added automatically
+)
+
+# Without file name (uses timestamp)
+url2 = save_metadata_to_azure(
+    metadata_list=metadata_list,
+    connection_string="your_connection_string",
+    container_name="documents",
+    folder_path="metadata/finance/2024"
+)
