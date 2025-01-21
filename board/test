@@ -1,7 +1,6 @@
 from azure.storage.blob import BlobServiceClient
 from typing import List, Dict, Any
 import os
-import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def upload_single_file(
@@ -10,66 +9,45 @@ def upload_single_file(
     base_path_to_ignore: str,
     destination_folder: str = None
 ) -> Dict[str, Any]:
-    """
-    Upload a single file to Azure Blob Storage.
-    
-    Args:
-        file_path (str): Path to the file to upload
-        container_client: Azure blob container client
-        base_path_to_ignore (str): Base path to remove from file_path
-        destination_folder (str, optional): Destination folder in container
-        
-    Returns:
-        Dict[str, Any]: Upload result details
-    """
-    logger = logging.getLogger(__name__)
-    
+    """Upload a single file to Azure Blob Storage."""
     try:
-        # Normalize paths
         file_path = os.path.normpath(file_path)
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+            return {
+                "file_name": os.path.basename(file_path),
+                "status": "failed",
+                "error": "File not found"
+            }
         
-        # Calculate relative path
         if not file_path.startswith(base_path_to_ignore):
-            raise ValueError(f"File path {file_path} does not start with base path {base_path_to_ignore}")
+            return {
+                "file_name": os.path.basename(file_path),
+                "status": "failed",
+                "error": "File path does not start with base path"
+            }
         
         relative_path = file_path[len(base_path_to_ignore):].lstrip('/')
         blob_path = f"{destination_folder.strip('/')}/{relative_path}" if destination_folder else relative_path
         blob_path = blob_path.replace('\\', '/')
         
-        # Get file size
         file_size = os.path.getsize(file_path)
-        
-        # Upload file
         blob_client = container_client.get_blob_client(blob_path)
-        with open(file_path, "rb") as data:
-            blob_client.upload_blob(
-                data,
-                overwrite=True
-            )
         
-        logger.info(f"Uploaded {file_path} to {blob_path}")
+        with open(file_path, "rb") as data:
+            blob_client.upload_blob(data, overwrite=True)
         
         return {
             "file_name": os.path.basename(file_path),
-            "original_path": file_path,
             "blob_path": blob_path,
             "status": "success",
             "url": blob_client.url,
-            "size": file_size,
-            "error": None
+            "size": file_size
         }
         
     except Exception as e:
-        logger.error(f"Failed to upload {file_path}: {str(e)}")
         return {
             "file_name": os.path.basename(file_path),
-            "original_path": file_path,
-            "blob_path": blob_path if 'blob_path' in locals() else None,
             "status": "failed",
-            "url": None,
-            "size": file_size if 'file_size' in locals() else None,
             "error": str(e)
         }
 
@@ -81,30 +59,14 @@ def upload_files_to_azure_container(
     destination_folder: str = None,
     max_workers: int = 4
 ) -> List[Dict[str, Any]]:
-    """
-    Upload multiple files to Azure Blob Storage container in parallel.
-    
-    Args:
-        file_paths (List[str]): List of file paths to upload
-        connection_string (str): Azure Storage connection string
-        container_name (str): Name of the blob container
-        base_path_to_ignore (str): Base path to remove from file_paths
-        destination_folder (str, optional): Base folder path in container
-        max_workers (int, optional): Maximum number of parallel uploads
-    """
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-    
+    """Upload multiple files to Azure Blob Storage container in parallel."""
     try:
-        # Initialize Azure clients
         blob_service_client = BlobServiceClient.from_connection_string(connection_string)
         container_client = blob_service_client.get_container_client(container_name)
         
         if not container_client.exists():
             container_client.create_container()
-            logger.info(f"Created container: {container_name}")
         
-        # Upload files in parallel
         results = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_file = {
@@ -120,24 +82,24 @@ def upload_files_to_azure_container(
             for future in as_completed(future_to_file):
                 results.append(future.result())
         
-        # Sort results (successes first)
-        results.sort(key=lambda x: x['status'] == 'failed')
         return results
         
     except Exception as e:
-        logger.error(f"Blob storage operation failed: {str(e)}")
-        raise
+        # Only fail completely if we can't even start the upload process
+        return [{
+            "file_name": "batch_operation",
+            "status": "failed",
+            "error": f"Failed to initialize upload: {str(e)}"
+        }]
 
 # Example usage
 if __name__ == "__main__":
-    # Configuration
     config = {
         "connection_string": "your_connection_string",
         "container_name": "docs-container",
         "base_path_to_ignore": "/tmp/va.gov-team"
     }
     
-    # Example: Upload files
     files_to_upload = [
         "/tmp/va.gov-team/products/avs/finding.md",
         "/tmp/va.gov-team/products/avs/design/mockups.pdf"
@@ -148,18 +110,20 @@ if __name__ == "__main__":
         connection_string=config["connection_string"],
         container_name=config["container_name"],
         base_path_to_ignore=config["base_path_to_ignore"],
-        destination_folder="documentation",
-        max_workers=4
+        destination_folder="documentation"
     )
     
-    # Print results
-    print("\nUpload Results:")
-    print("-" * 50)
-    for result in results:
-        print(f"\nFile: {result['file_name']}")
-        print(f"Size: {result['size']/1024/1024:.2f} MB")
-        print(f"Status: {result['status']}")
-        if result['error']:
-            print(f"Error: {result['error']}")
-        else:
-            print(f"URL: {result['url']}")
+    # Print summary of results
+    success_count = sum(1 for r in results if r['status'] == 'success')
+    failed_count = sum(1 for r in results if r['status'] == 'failed')
+    
+    print(f"\nUpload Summary:")
+    print(f"Successful: {success_count}")
+    print(f"Failed: {failed_count}")
+    
+    # Print details of failed uploads
+    if failed_count > 0:
+        print("\nFailed Uploads:")
+        for result in results:
+            if result['status'] == 'failed':
+                print(f"- {result['file_name']}: {result['error']}")
