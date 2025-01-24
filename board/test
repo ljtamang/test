@@ -58,3 +58,35 @@ CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
 USING DELTA
 COMMENT 'Table to store metadata about raw files in the VFS project'
 LOCATION 'dbfs:/mnt/vfs/raw/metadata';
+
+
+
+import concurrent.futures
+
+# Assuming get_git_metadata is a function that takes a file path and returns metadata
+def get_git_metadata(file_path):
+    # Your implementation here
+    pass
+
+# List of file paths
+file_list = ["file1.txt", "file2.txt", "file3.txt"]
+
+# List to store the metadata results
+metadata_list = []
+
+# Using ThreadPoolExecutor to parallelize the execution
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    # Submit tasks to the executor
+    future_to_file = {executor.submit(get_git_metadata, file): file for file in file_list}
+    
+    # As each future completes, append the result to metadata_list
+    for future in concurrent.futures.as_completed(future_to_file):
+        file = future_to_file[future]
+        try:
+            metadata = future.result()
+            metadata_list.append(metadata)
+        except Exception as e:
+            print(f"An error occurred while processing {file}: {e}")
+
+# Now metadata_list contains the results of get_git_metadata for each file
+print(metadata_list)
