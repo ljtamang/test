@@ -32,3 +32,7 @@ metadata_df = metadata_df.withColumn("upload_status", "Pending") \
 
 # Insert into the table
 metadata_df.write.format("delta").mode("append").saveAsTable("vfs_raw.file_metadata")
+
+
+# Print the schema of the Delta table
+spark.sql("DESCRIBE TABLE vfs_raw.file_metadata").show(truncate=False)
