@@ -1,8 +1,17 @@
-CREATE DATABASE IF NOT EXISTS my_database
-COMMENT 'This is my custom database'
-LOCATION 'dbfs:/mnt/metadata/my_database';
+CREATE DATABASE IF NOT EXISTS vfs_raw
+LOCATION 'dbfs:/mnt/vfs/raw';
 
-CREATE TABLE my_database.file_metadata (
+CREATE TABLE IF NOT EXISTS vfs_raw.files (
+    name STRING,
+    relative_file_path STRING,
+    file_extension STRING,
+    size BIGINT,
+    upload_on TIMESTAMP
+)
+USING DELTA
+LOCATION 'dbfs:/mnt/vfs/raw/files';
+
+CREATE TABLE IF NOT EXISTS vfs_raw.metadata (
     name STRING,
     relative_file_path STRING,
     file_extension STRING,
@@ -13,4 +22,5 @@ CREATE TABLE my_database.file_metadata (
     upload_on TIMESTAMP
 )
 USING DELTA
-LOCATION 'dbfs:/mnt/metadata/file_metadata';
+LOCATION 'dbfs:/mnt/vfs/raw/metadata';
+
