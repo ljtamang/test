@@ -1,1 +1,34 @@
+from pyspark.sql import SparkSession
 
+# Initialize Spark session
+spark = SparkSession.builder \
+    .appName("Insert DataFrame into Table") \
+    .getOrCreate()
+
+# Your list of dictionaries
+metadata_list = [
+    {"filename": "name_of_file1", "file_relative_path": "path/of/file1.txt"},
+    {"filename": "name_of_file2", "file_relative_path": "path/of/file2.txt"}
+]
+
+# Create DataFrame
+df = spark.createDataFrame(metadata_list)
+
+# Insert DataFrame into a table
+df.write.saveAsTable("metadata_table")
+
+# Query the table
+result_df = spark.sql("SELECT * FROM metadata_table")
+result_df.show()
+
+
+# Add ETL timestamps
+from pyspark.sql.functions import current_timestamp
+
+metadata_df = metadata_df.withColumn("upload_status", "Pending") \
+                         .withColumn("upload_on", None) \
+                         .withColumn("etl_created_on", current_timestamp()) \
+                         .withColumn("etl_updated_on", current_timestamp())
+
+# Insert into the table
+metadata_df.write.format("delta").mode("append").saveAsTable("vfs_raw.file_metadata")
