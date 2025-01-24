@@ -1,1 +1,16 @@
+CREATE TABLE IF NOT EXISTS file_metadata (
+    name STRING,
+    relative_file_path STRING,
+    file_extension STRING,
+    category STRING,
+    git_last_commit_date TIMESTAMP,
+    git_blob_hash STRING,
+    upload_status STRING,
+    upload_on TIMESTAMP
+)
+USING DELTA
+LOCATION 'dbfs:/mnt/metadata/file_metadata';  -- Specify the location for the Delta table
 
+CREATE DATABASE IF NOT EXISTS my_database
+COMMENT 'This is my custom database'
+LOCATION 'dbfs:/mnt/metadata/my_database';
