@@ -22,10 +22,10 @@ LOCATION 'dbfs:/mnt/vfs/raw';
 
 -- Create the table
 CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
-    name STRING COMMENT 'Name of the file',
-    relative_file_path STRING COMMENT 'Relative path of the file in the repository',
+    file_name STRING COMMENT 'Name of the file',
+    file_relative_path STRING COMMENT 'Relative path of the file in the repository',
     file_extension STRING COMMENT 'File extension (e.g., .pdf, .pptx)',
-    category STRING COMMENT 'Category of the file (e.g., raw, processed)',
+    category STRING COMMENT 'Category of the file (e.g., research_findings, research_plan, etc)',
     git_last_commit_date TIMESTAMP COMMENT 'Date of the latest Git commit that modified the file',
     git_blob_hash STRING COMMENT 'Git blob hash (unique identifier for the file content in Git)',
     upload_status STRING COMMENT 'Upload status of the file (e.g., Pending, Uploaded)',
