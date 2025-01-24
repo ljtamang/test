@@ -1,3 +1,20 @@
+
+dbfs:/mnt/
+    vfs/
+        raw/                # Raw files and metadata
+            files/          # Raw file storage
+            metadata/       # Metadata about raw files
+        processed/          # Processed data
+            files/          # Processed file storage
+            metadata/       # Metadata about processed files
+        analytics/          # Analytics data
+            results/        # Analytics results
+            reports/        # Pre-generated reports
+        metadata/           # Project-wide metadata
+            etl_logs/       # ETL job logs
+            pipeline_status/ # Pipeline status
+
+
 CREATE DATABASE IF NOT EXISTS vfs_raw
 LOCATION 'dbfs:/mnt/vfs/raw';
 
