@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
     git_last_commit_date TIMESTAMP COMMENT 'Date of the latest Git commit that modified the file',
     git_blob_hash STRING COMMENT 'Git blob hash (unique identifier for the file content in Git)',
     upload_status STRING COMMENT 'Upload status of the file (e.g., Pending, Uploaded)',
-    upload_on TIMESTAMP COMMENT 'Timestamp when the file was uploaded to Azure Storage'
+    upload_on TIMESTAMP COMMENT 'Timestamp when the file was uploaded to Azure Storage',
+    etl_created_on TIMESTAMP COMMENT 'Timestamp when the metadata was first created by the ETL process',
+    etl_updated_on TIMESTAMP COMMENT 'Timestamp when the metadata was last updated by the ETL process'
 )
 USING DELTA
 COMMENT 'Table to store metadata about raw files in the VFS project'
