@@ -1,3 +1,25 @@
+First-Time Upload:
+
+Clone the GitHub repo and identify target files.
+
+Store metadata for all target files in the Databricks table with upload_status = "Pending".
+
+Upload all target files to Azure Storage.
+
+Update the metadata table with upload_status = "Uploaded" and set the upload_timestamp.
+
+Incremental Upload:
+
+Periodically clone the GitHub repo and identify new or modified target files.
+
+Compare the last_modified timestamp of files in the repo with the metadata in the Databricks table.
+
+Upload only new or modified files to Azure Storage.
+
+Update the metadata table for the newly uploaded files.
+
+
+
 
 dbfs:/mnt/
     vfs/
