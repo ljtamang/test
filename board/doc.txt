@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
     git_blob_hash STRING COMMENT 'Git blob hash (unique identifier for the file content)',
     upload_status STRING COMMENT 'Status of the file upload (e.g., pending, needs_reupload, uploaded)',
     upload_on TIMESTAMP COMMENT 'Timestamp when the file was uploaded to Azure',
+    blob_url STRING COMMENT 'URL of the file in Azure Blob Storage',
     error_message STRING COMMENT 'Error message if the file upload failed',
     etl_created_at TIMESTAMP COMMENT 'Timestamp when the record was created in the Delta table',
     etl_updated_at TIMESTAMP COMMENT 'Timestamp when the record was last updated in the Delta table'
@@ -30,7 +31,7 @@ def initial_load_file_metadata(metadata_list: List[Dict]):
     Args:
         metadata_list: List of dictionaries, where each dictionary contains metadata for a file.
                       Each dictionary must have keys: file_name, file_relative_path, file_extension,
-                      category, git_last_commit_date, git_blob_hash, upload_status, upload_on, error_message.
+                      category, git_last_commit_date, git_blob_hash, upload_status, upload_on, blob_url, error_message.
     """
     spark = SparkSession.builder.appName("InitialLoadFileMetadata").getOrCreate()
     
