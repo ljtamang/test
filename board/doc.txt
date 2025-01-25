@@ -110,3 +110,61 @@ incremental_metadata_list = [
 
 # Perform incremental update
 incremental_update_file_metadata(incremental_metadata_list)
+
+
+################
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import date_format, current_timestamp
+from typing import List, Dict
+
+def incremental_update_file_metadata(metadata_list: List[Dict]):
+    """
+    Handles incremental updates (inserts and updates) for the vfs_raw.file_metadata table.
+
+    Args:
+        metadata_list: List of dictionaries, where each dictionary contains metadata for a file.
+                      Each dictionary must have keys: file_name, file_relative_path, file_extension,
+                      category, git_last_commit_date, git_blob_hash, upload_status, upload_on, blob_url, error_message.
+    """
+    spark = SparkSession.builder.appName("IncrementalUpdateFileMetadata").getOrCreate()
+    
+    # Convert metadata list to DataFrame
+    incremental_df = spark.createDataFrame(metadata_list)
+    
+    # Add ISO 8601 formatted timestamps
+    incremental_df = incremental_df.withColumn("etl_created_at", date_format(current_timestamp(), "yyyy-MM-dd'T'HH:mm:ss.SSSZ")) \
+                                   .withColumn("etl_updated_at", date_format(current_timestamp(), "yyyy-MM-dd'T'HH:mm:ss.SSSZ"))
+    
+    # Perform MERGE operation to handle inserts and updates
+    incremental_df.createOrReplaceTempView("incremental_updates")
+    
+    spark.sql("""
+    MERGE INTO vfs_raw.file_metadata AS target
+    USING incremental_updates AS source
+    ON target.file_relative_path = source.file_relative_path
+    WHEN MATCHED AND (
+        source.git_last_commit_date > target.git_last_commit_date OR
+        source.git_blob_hash != target.git_blob_hash
+    ) THEN
+        UPDATE SET
+            target.git_last_commit_date = source.git_last_commit_date,  -- Update commit date
+            target.git_blob_hash = source.git_blob_hash,  -- Update blob hash
+            target.upload_status = 'needs_reupload',  -- Set status to indicate re-upload is needed
+            target.upload_on = NULL,  -- Reset upload_on since the file needs to be re-uploaded
+            target.blob_url = NULL,  -- Reset blob_url since the file needs to be re-uploaded
+            target.error_message = NULL,  -- Clear any previous error message
+            target.etl_updated_at = source.etl_updated_at  -- Update the last updated timestamp
+    WHEN NOT MATCHED THEN
+        INSERT (
+            file_name, file_relative_path, file_extension, category,
+            git_last_commit_date, git_blob_hash, upload_status, upload_on,
+            blob_url, error_message, etl_created_at, etl_updated_at
+        )
+        VALUES (
+            source.file_name, source.file_relative_path, source.file_extension, source.category,
+            source.git_last_commit_date, source.git_blob_hash, source.upload_status, source.upload_on,
+            source.blob_url, source.error_message, source.etl_created_at, source.etl_updated_at
+        )
+    """)
+    
+    print("Incremental update completed successfully.")
