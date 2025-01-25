@@ -28,6 +28,11 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import date_format, current_timestamp
 from typing import List, Dict
 
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
+from pyspark.sql.functions import date_format, current_timestamp
+from typing import List, Dict
+
 def initial_load_file_metadata(metadata_list: List[Dict]):
     """
     Performs the initial load of file metadata into the vfs_raw.file_metadata table.
@@ -40,8 +45,22 @@ def initial_load_file_metadata(metadata_list: List[Dict]):
     """
     spark = SparkSession.builder.appName("InitialLoadFileMetadata").getOrCreate()
     
-    # Convert metadata list to DataFrame
-    initial_df = spark.createDataFrame(metadata_list)
+    # Define the schema explicitly
+    schema = StructType([
+        StructField("file_name", StringType(), nullable=False),
+        StructField("file_relative_path", StringType(), nullable=False),
+        StructField("file_extension", StringType(), nullable=False),
+        StructField("category", StringType(), nullable=False),
+        StructField("git_last_commit_date", TimestampType(), nullable=False),
+        StructField("git_blob_hash", StringType(), nullable=False),
+        StructField("upload_status", StringType(), nullable=False),
+        StructField("upload_on", TimestampType(), nullable=True),
+        StructField("blob_url", StringType(), nullable=True),
+        StructField("error_message", StringType(), nullable=True)
+    ])
+    
+    # Convert metadata list to DataFrame with explicit schema
+    initial_df = spark.createDataFrame(metadata_list, schema=schema)
     
     # Add etl_created_at and etl_updated_at fields with current timestamp in ISO 8601 format
     initial_df = initial_df.withColumn("etl_created_at", date_format(current_timestamp(), "yyyy-MM-dd'T'HH:mm:ss.SSSZ")) \
