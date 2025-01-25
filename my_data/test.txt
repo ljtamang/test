@@ -2,37 +2,30 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 from pyspark.sql.functions import to_timestamp, current_timestamp, lit
 from typing import List, Dict
-from datetime import datetime
 
 def first_time_load_metadata_to_delta_table(metadata_list: List[Dict]):
     spark = SparkSession.builder.appName("FirstTimeLoadMetadata").getOrCreate()
     
-    # Initial schema with string type for dates
     schema = StructType([
         StructField("file_name", StringType(), nullable=False),
         StructField("file_relative_path", StringType(), nullable=False),
         StructField("file_extension", StringType(), nullable=False),
         StructField("category", StringType(), nullable=False),
-        StructField("git_last_commit_date", StringType(), nullable=False),  # Changed to StringType
+        StructField("git_last_commit_date", StringType(), nullable=False),
         StructField("git_blob_hash", StringType(), nullable=False),
         StructField("upload_status", StringType(), nullable=False),
-        StructField("upload_on", StringType(), nullable=True),  # Changed to StringType
+        StructField("upload_on", StringType(), nullable=True),
         StructField("blob_url", StringType(), nullable=True),
         StructField("error_message", StringType(), nullable=True)
     ])
     
     initial_df = spark.createDataFrame(metadata_list, schema=schema)
     
-    # Convert string timestamps to proper timestamp type
     initial_df = initial_df \
         .withColumn("git_last_commit_date", to_timestamp("git_last_commit_date", "yyyy-MM-dd'T'HH:mm:ssXXX")) \
-        .withColumn("upload_on", to_timestamp("upload_on", "yyyy-MM-dd'T'HH:mm:ssXXX"))
-    
-    # Add timestamp columns
-    current_time = datetime.now()
-    initial_df = initial_df \
-        .withColumn("etl_created_at", lit(current_time)) \
-        .withColumn("etl_updated_at", lit(current_time))
+        .withColumn("upload_on", to_timestamp("upload_on", "yyyy-MM-dd'T'HH:mm:ssXXX")) \
+        .withColumn("etl_created_at", current_timestamp()) \
+        .withColumn("etl_updated_at", current_timestamp())
     
     initial_df.write.format("delta") \
         .mode("overwrite") \
