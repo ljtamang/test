@@ -38,6 +38,11 @@ from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 from pyspark.sql.functions import to_timestamp, date_format, current_timestamp
 from typing import List, Dict
 
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
+from pyspark.sql.functions import to_timestamp, date_format, current_timestamp
+from typing import List, Dict
+
 def first_time_load_metadata_to_delta_table(metadata_list: List[Dict]):
     """
     Performs the first-time load of file metadata into the vfs_raw.file_metadata Delta table.
@@ -86,7 +91,6 @@ def first_time_load_metadata_to_delta_table(metadata_list: List[Dict]):
         .saveAsTable("vfs_raw.file_metadata")
     
     print("First-time load of metadata into Delta table completed successfully.")
-
 
 
 
