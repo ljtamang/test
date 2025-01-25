@@ -1,74 +1,49 @@
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.functions import lit, current_timestamp
-from pyspark.sql.types import StringType, TimestampType
+-- Create database if it doesn't exist
+CREATE DATABASE IF NOT EXISTS vfs_raw;
+
+-- Create the file_metadata table in the vfs_raw database with a custom location
+CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
+    file_name STRING COMMENT 'Name of the file',
+    file_relative_path STRING COMMENT 'Relative path of the file in the repository',
+    file_extension STRING COMMENT 'File extension (e.g., md, txt, pdf)',
+    category STRING COMMENT 'Category or type of the file (e.g., research_findings)',
+    git_last_commit_date TIMESTAMP COMMENT 'Timestamp of the last Git commit for the file',
+    git_blob_hash STRING COMMENT 'Git blob hash (unique identifier for the file content)',
+    upload_status STRING COMMENT 'Status of the file upload (e.g., pending, needs_reupload, uploaded)',
+    upload_on TIMESTAMP COMMENT 'Timestamp when the file was uploaded to Azure',
+    error_message STRING COMMENT 'Error message if the file upload failed',
+    etl_created_at TIMESTAMP COMMENT 'Timestamp when the record was created in the Delta table',
+    etl_updated_at TIMESTAMP COMMENT 'Timestamp when the record was last updated in the Delta table'
+)
+USING delta
+LOCATION 'vfs/raw/metadata';
+
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import date_format, current_timestamp
 from typing import List, Dict
-import datetime
 
-def write_metadata_to_delta_table(metadata_list: List[Dict[str, str]]) -> None:
+def initial_load_file_metadata(metadata_list: List[Dict]):
     """
-    Writes file metadata into the `vfs_raw.file_metadata` Delta table.
+    Performs the initial load of file metadata into the vfs_raw.file_metadata table.
 
-    This function takes a list of file metadata dictionaries, adds additional required columns
-    (e.g., upload_status, upload_on, etc.), and writes the data into the Delta table,
-    overwriting any existing data.
-
-    Parameters:
-    -----------
-    metadata_list : List[Dict[str, str]]
-        A list of dictionaries where each dictionary contains metadata for a file.
-        Each dictionary must have the following keys:
-        - file_name: Name of the file (e.g., "file1.md").
-        - file_relative_path: Relative path of the file (e.g., "relative/path/of/file.txt").
-        - file_extension: File extension (e.g., "md").
-        - category: Category of the file (e.g., "research_findings").
-        - git_last_commit_date: Last commit date of the file in Git (e.g., "2021-01-01").
-        - git_blob_hash: Git blob hash of the file (e.g., "has_string").
-
-    Returns:
-    --------
-    None
-        The function writes the DataFrame to the Delta table and does not return any value.
+    Args:
+        metadata_list: List of dictionaries, where each dictionary contains metadata for a file.
+                      Each dictionary must have keys: file_name, file_relative_path, file_extension,
+                      category, git_last_commit_date, git_blob_hash, upload_status, upload_on, error_message.
     """
-    # Initialize Spark session (not strictly necessary in Databricks, as it's already available)
-    spark = SparkSession.builder.getOrCreate()
-
-    # Create a DataFrame from the metadata_list
-    df = spark.createDataFrame(metadata_list)
-
-    # Get the current timestamp in ISO format
-    current_time = datetime.datetime.now().isoformat()
-
-    # Add the additional required columns
-    df = df.withColumn("upload_status", lit("Pending")) \
-           .withColumn("upload_on", lit(current_time).cast(TimestampType())) \
-           .withColumn("blob_url", lit("").cast(StringType())) \
-           .withColumn("error_message", lit("").cast(StringType())) \
-           .withColumn("etl_created_at", lit(current_time).cast(TimestampType())) \
-           .withColumn("etl_updated_at", lit(current_time).cast(TimestampType()))
-
-    # Write the DataFrame to the Delta table, overwriting the existing data
-    df.write.format("delta") \
-        .mode("overwrite") \
+    spark = SparkSession.builder.appName("InitialLoadFileMetadata").getOrCreate()
+    
+    # Convert metadata list to DataFrame
+    initial_df = spark.createDataFrame(metadata_list)
+    
+    # Add etl_created_at and etl_updated_at fields with current timestamp in ISO 8601 format
+    initial_df = initial_df.withColumn("etl_created_at", date_format(current_timestamp(), "yyyy-MM-dd'T'HH:mm:ss.SSSZ")) \
+                           .withColumn("etl_updated_at", date_format(current_timestamp(), "yyyy-MM-dd'T'HH:mm:ss.SSSZ"))
+    
+    # Insert all records into the Delta table
+    initial_df.write.format("delta") \
+        .mode("append") \
         .saveAsTable("vfs_raw.file_metadata")
-
-# Example usage
-metadata_list = [
-    {
-        "file_name": "file1.md",
-        "file_relative_path": "relative/path/of/file.txt",
-        "file_extension": "md",
-        "category": "research_findings",
-        "git_last_commit_date": "2021-01-01",
-        "git_blob_hash": "has_string"
-    },
-    {
-        "file_name": "file2.md",
-        "file_relative_path": "relative/path/of/file2.txt",
-        "file_extension": "md",
-        "category": "research_findings",
-        "git_last_commit_date": "2021-01-02",
-        "git_blob_hash": "has_string2"
-    }
-]
-
-write_metadata_to_delta_table(metadata_list)
+    
+    print("Initial load completed successfully.")
