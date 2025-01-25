@@ -1,21 +1,12 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import to_timestamp, current_timestamp
+from pyspark.sql.functions import to_timestamp, current_timestamp, lit
 from typing import List, Dict
+from datetime import datetime
 
 def first_time_load_metadata_to_delta_table(metadata_list: List[Dict]):
-    """
-    Performs the first-time load of file metadata into the vfs_raw.file_metadata Delta table.
-    Uses overwrite mode to ensure the table is fresh and doesn't contain duplicates.
-
-    Args:
-        metadata_list: List of dictionaries, where each dictionary contains metadata for a file.
-                      Each dictionary must have keys: file_name, file_relative_path, file_extension,
-                      category, git_last_commit_date, git_blob_hash, upload_status, upload_on, blob_url, error_message.
-    """
     spark = SparkSession.builder.appName("FirstTimeLoadMetadata").getOrCreate()
     
-    # Define the schema explicitly with TimestampType for timestamp fields
     schema = StructType([
         StructField("file_name", StringType(), nullable=False),
         StructField("file_relative_path", StringType(), nullable=False),
@@ -26,25 +17,16 @@ def first_time_load_metadata_to_delta_table(metadata_list: List[Dict]):
         StructField("upload_status", StringType(), nullable=False),
         StructField("upload_on", TimestampType(), nullable=True),
         StructField("blob_url", StringType(), nullable=True),
-        StructField("error_message", StringType(), nullable=True),
-        StructField("etl_created_at", TimestampType(), nullable=False),
-        StructField("etl_updated_at", TimestampType(), nullable=False)
+        StructField("error_message", StringType(), nullable=True)
     ])
     
-    # Add timestamp fields to the metadata before creating DataFrame
-    enriched_metadata = []
-    current_time = current_timestamp().eval()
+    initial_df = spark.createDataFrame(metadata_list, schema=schema)
     
-    for item in metadata_list:
-        item_copy = item.copy()
-        item_copy['etl_created_at'] = current_time
-        item_copy['etl_updated_at'] = current_time
-        enriched_metadata.append(item_copy)
+    # Add timestamp columns using lit() function
+    current_time = datetime.now()
+    initial_df = initial_df.withColumn("etl_created_at", lit(current_time)) \
+                         .withColumn("etl_updated_at", lit(current_time))
     
-    # Create DataFrame with complete schema including timestamp fields
-    initial_df = spark.createDataFrame(enriched_metadata, schema=schema)
-    
-    # Insert all records into the Delta table in overwrite mode
     initial_df.write.format("delta") \
         .mode("overwrite") \
         .saveAsTable("vfs_raw.file_metadata")
