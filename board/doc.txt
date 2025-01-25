@@ -1,26 +1,74 @@
-from azure.storage.blob import BlobServiceClient
+from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql.functions import lit, current_timestamp
+from pyspark.sql.types import StringType, TimestampType
+from typing import List, Dict
+import datetime
 
-# Initialize Azure Blob Service Client
-connection_string = "<your-connection-string>"
-container_name = "<your-container-name>"
-blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-container_client = blob_service_client.get_container_client(container_name)
+def write_metadata_to_delta_table(metadata_list: List[Dict[str, str]]) -> None:
+    """
+    Writes file metadata into the `vfs_raw.file_metadata` Delta table.
 
-# Upload files to Azure Storage
-for file, file_path in target_files:
-    blob_client = container_client.get_blob_client(file)
-    with open(file_path, "rb") as data:
-        blob_client.upload_blob(data)
+    This function takes a list of file metadata dictionaries, adds additional required columns
+    (e.g., upload_status, upload_on, etc.), and writes the data into the Delta table,
+    overwriting any existing data.
 
+    Parameters:
+    -----------
+    metadata_list : List[Dict[str, str]]
+        A list of dictionaries where each dictionary contains metadata for a file.
+        Each dictionary must have the following keys:
+        - file_name: Name of the file (e.g., "file1.md").
+        - file_relative_path: Relative path of the file (e.g., "relative/path/of/file.txt").
+        - file_extension: File extension (e.g., "md").
+        - category: Category of the file (e.g., "research_findings").
+        - git_last_commit_date: Last commit date of the file in Git (e.g., "2021-01-01").
+        - git_blob_hash: Git blob hash of the file (e.g., "has_string").
 
-from pyspark.sql.functions import when
+    Returns:
+    --------
+    None
+        The function writes the DataFrame to the Delta table and does not return any value.
+    """
+    # Initialize Spark session (not strictly necessary in Databricks, as it's already available)
+    spark = SparkSession.builder.getOrCreate()
 
-# Load the metadata table into a DataFrame
-metadata_df = spark.read.table("vfs_raw.file_metadata")
+    # Create a DataFrame from the metadata_list
+    df = spark.createDataFrame(metadata_list)
 
-# Update upload_status and upload_on for all files
-metadata_df = metadata_df.withColumn("upload_status", when(metadata_df.file_name.isin([file[0] for file in target_files]), "Uploaded")) \
-                         .withColumn("upload_on", when(metadata_df.file_name.isin([file[0] for file in target_files]), current_timestamp()))
+    # Get the current timestamp in ISO format
+    current_time = datetime.datetime.now().isoformat()
 
-# Save the updated metadata back to the Delta table
-metadata_df.write.format("delta").mode("overwrite").saveAsTable("vfs_raw.file_metadata")
+    # Add the additional required columns
+    df = df.withColumn("upload_status", lit("Pending")) \
+           .withColumn("upload_on", lit(current_time).cast(TimestampType())) \
+           .withColumn("blob_url", lit("").cast(StringType())) \
+           .withColumn("error_message", lit("").cast(StringType())) \
+           .withColumn("etl_created_at", lit(current_time).cast(TimestampType())) \
+           .withColumn("etl_updated_at", lit(current_time).cast(TimestampType()))
+
+    # Write the DataFrame to the Delta table, overwriting the existing data
+    df.write.format("delta") \
+        .mode("overwrite") \
+        .saveAsTable("vfs_raw.file_metadata")
+
+# Example usage
+metadata_list = [
+    {
+        "file_name": "file1.md",
+        "file_relative_path": "relative/path/of/file.txt",
+        "file_extension": "md",
+        "category": "research_findings",
+        "git_last_commit_date": "2021-01-01",
+        "git_blob_hash": "has_string"
+    },
+    {
+        "file_name": "file2.md",
+        "file_relative_path": "relative/path/of/file2.txt",
+        "file_extension": "md",
+        "category": "research_findings",
+        "git_last_commit_date": "2021-01-02",
+        "git_blob_hash": "has_string2"
+    }
+]
+
+write_metadata_to_delta_table(metadata_list)
