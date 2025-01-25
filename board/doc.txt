@@ -53,3 +53,60 @@ def initial_load_file_metadata(metadata_list: List[Dict]):
         .saveAsTable("vfs_raw.file_metadata")
     
     print("Initial load completed successfully.")
+
+
+
+
+# Example metadata list for initial load
+initial_metadata_list = [
+    {
+        "file_name": "research_report.md",
+        "file_relative_path": "file/relative_path/research_report.md",
+        "file_extension": "md",
+        "category": "research_findings",
+        "git_last_commit_date": "2022-09-27T18:00:00.000Z",
+        "git_blob_hash": "af5626b4a114abcb82d63db7c8082c3c4756e51b",
+        "upload_status": "pending",
+        "upload_on": None,
+        "blob_url": None,  # Initially empty
+        "error_message": None
+    }
+]
+
+# Perform initial load
+initial_load_file_metadata(initial_metadata_list)
+
+
+
+
+
+# Example metadata list for incremental update
+incremental_metadata_list = [
+    {
+        "file_name": "research_report.md",  # Existing file (update)
+        "file_relative_path": "file/relative_path/research_report.md",
+        "file_extension": "md",
+        "category": "research_findings",
+        "git_last_commit_date": "2023-10-26T18:00:00.000Z",  # Newer commit date
+        "git_blob_hash": "df5626b4a114abcb82d63db7c8082c3c4756e51b",  # Different hash
+        "upload_status": "needs_reupload",  # Needs to be re-uploaded
+        "upload_on": None,  # Reset since the file needs to be re-uploaded
+        "blob_url": None,  # Reset since the file needs to be re-uploaded
+        "error_message": None
+    },
+    {
+        "file_name": "new_research_report.md",  # New file (insert)
+        "file_relative_path": "file/relative_path/new_research_report.md",
+        "file_extension": "md",
+        "category": "research_findings",
+        "git_last_commit_date": "2023-10-25T14:30:45.123Z",  # ISO format
+        "git_blob_hash": "ef5626b4a114abcb82d63db7c8082c3c4756e51b",  # New hash
+        "upload_status": "pending",  # New file, needs to be uploaded
+        "upload_on": None,
+        "blob_url": None,  # Initially empty
+        "error_message": None
+    }
+]
+
+# Perform incremental update
+incremental_update_file_metadata(incremental_metadata_list)
