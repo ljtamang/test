@@ -1,3 +1,4 @@
-# Count duplicates based on column 'A'
-duplicate_counts = df.groupby('A').size().reset_index(name='counts')
-duplicate_counts = duplicate_counts[duplicate_counts['counts'] > 1]
+SELECT column_name, COUNT(*) AS duplicate_count
+FROM your_table_name
+GROUP BY column_name
+HAVING COUNT(*) > 1;
