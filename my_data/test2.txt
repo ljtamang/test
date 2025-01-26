@@ -1,1 +1,20 @@
-This is file two
+def get_timestamp(use_est: bool = True) -> str:
+    """Get current timestamp in ISO 8601 format, either in EST (default) or UTC.
+    
+    Args:
+        use_est (bool): If True (default), return timestamp in EST. If False, return in UTC.
+    
+    Returns:
+        str: Timestamp in format 'YYYY-MM-DDThh:mm:ss.ssssss±hh:mm'
+    """
+    # Get current time in UTC
+    utc_time = datetime.now(pytz.UTC)
+    
+    if use_est:
+        # Convert UTC time to EST
+        est_timezone = pytz.timezone('US/Eastern')
+        est_time = utc_time.astimezone(est_timezone)
+        return est_time.isoformat()
+    else:
+        # Return UTC time
+        return utc_time.isoformat()This is file two
