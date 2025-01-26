@@ -1,173 +1,37 @@
-"""Azure Storage File Upload Module with EST/UTC timestamp support."""
-
-import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Union, Optional
-from azure.storage.blob import BlobServiceClient
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
+from pyspark.sql.functions import col, lit, when, to_timestamp
 from datetime import datetime
 import pytz
+from typing import List, Dict
 
-_blob_service_client_cache: Optional[BlobServiceClient] = None
-
-def get_timestamp(use_est: bool = True) -> str:
-    """Get current timestamp in ISO 8601 format, either in EST (default) or UTC.
+def first_time_load_file_metadata_to_table(
+    metadata_list: List[Dict],
+    timezone: str = "America/New_York"
+) -> None:
+    spark = SparkSession.builder.appName("FirstTimeLoadMetadata").getOrCreate()
     
-    Args:
-        use_est (bool): If True (default), return timestamp in EST. If False, return in UTC.
+    schema = StructType([
+        StructField("file_name", StringType(), nullable=False),
+        StructField("file_relative_path", StringType(), nullable=False),
+        StructField("file_extension", StringType(), nullable=False),
+        StructField("category", StringType(), nullable=False),
+        StructField("git_blob_hash", StringType(), nullable=False),
+        StructField("upload_status", StringType(), nullable=False),
+        StructField("upload_on", TimestampType(), nullable=True),
+        StructField("blob_url", StringType(), nullable=True),
+        StructField("error_message", StringType(), nullable=True)
+    ])
     
-    Returns:
-        str: Timestamp in format 'YYYY-MM-DDThh:mm:ss.ssssss±hh:mm'
-    """
-    utc_time = datetime.now(pytz.UTC)
-    if use_est:
-        est_timezone = pytz.timezone('US/Eastern')
-        est_time = utc_time.astimezone(est_timezone)
-        return est_time.isoformat()
-    return utc_time.isoformat()
-
-def initialize_blob_client(
-    storage_account_name: str,
-    storage_key: str
-) -> BlobServiceClient:
-    """Initialize or retrieve cached Azure Blob Service Client.
+    initial_df = spark.createDataFrame(metadata_list, schema=schema)
+    current_time = get_standardized_timestamp(timezone)
     
-    Args:
-        storage_account_name: Azure storage account name
-        storage_key: Azure storage account access key
-        
-    Returns:
-        BlobServiceClient: Instance for Azure Blob operations
-    """
-    global _blob_service_client_cache
-    if _blob_service_client_cache is None:
-        connection_string = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={storage_key};EndpointSuffix=core.windows.net"
-        _blob_service_client_cache = BlobServiceClient.from_connection_string(connection_string)
-    return _blob_service_client_cache
-
-def upload_single_blob(
-    local_file_path: str,
-    local_repo_path: str, 
-    blob_service_client: BlobServiceClient,
-    container_name: str,
-    destination_folder: str,
-    use_est_timezone: bool = True,
-    max_file_size: Optional[int] = None
-) -> Dict[str, Optional[Union[str, datetime]]]:
-    """Upload single file to Azure Storage with EST/UTC timestamp tracking.
+    processed_df = initial_df \
+        .withColumn("etl_created_at", to_timestamp(lit(current_time))) \
+        .withColumn("etl_updated_at", to_timestamp(lit(current_time)))
     
-    Args:
-        local_file_path: Full path to local file
-        local_repo_path: Base path of local repository
-        blob_service_client: Azure blob service client
-        container_name: Azure storage container name
-        destination_folder: Target folder in blob storage
-        use_est_timezone: If True, use EST timezone for timestamp
-        max_file_size: Maximum allowed file size in bytes
-        
-    Returns:
-        Dict containing upload status and timestamp info
-    """
-    result = {
-        "file_path": local_file_path,
-        "file_relative_path": None,
-        "upload_status": "fail",
-        "blob_path": None,
-        "blob_url": None,
-        "error": None,
-        "upload_timestamp": None
-    }
+    processed_df.write.format("delta") \
+        .mode("overwrite") \
+        .saveAsTable("vfs_raw.file_metadata")
     
-    try:
-        if not os.path.exists(local_file_path):
-            result["error"] = f"File does not exist: {local_file_path}"
-            return result
-            
-        if max_file_size and os.path.getsize(local_file_path) > max_file_size:
-            result["error"] = f"File exceeds maximum size limit of {max_file_size/1024/1024:.2f}MB"
-            return result
-            
-        file_relative_path = os.path.relpath(local_file_path, local_repo_path)
-        result["file_relative_path"] = file_relative_path
-        result["blob_path"] = os.path.join(destination_folder, file_relative_path)
-
-        blob_client = blob_service_client.get_blob_client(
-            container=container_name, 
-            blob=result["blob_path"]
-        )
-        blob_client.upload_blob(local_file_path, overwrite=True)
-
-        result["upload_status"] = "success"
-        result["blob_url"] = blob_client.url
-        result["upload_timestamp"] = get_timestamp(use_est=use_est_timezone)
-    except Exception as e:
-        result["error"] = str(e)
-    
-    return result
-
-def upload_files_to_azure_storage(
-    file_paths: List[str],
-    local_repo_path: str,
-    storage_account_name: str,
-    storage_key: str,
-    container_name: str,
-    destination_folder: str,
-    use_est_timezone: bool = True,
-    num_workers: int = 5,
-    max_file_size: Optional[int] = None
-) -> List[Dict[str, Optional[Union[str, datetime]]]]:
-    """Upload multiple files to Azure Storage with parallel processing.
-    
-    Args:
-        file_paths: List of file paths to upload
-        local_repo_path: Base path of local repository
-        storage_account_name: Azure storage account name
-        storage_key: Azure storage account key
-        container_name: Azure container name
-        destination_folder: Destination folder in Azure Storage
-        use_est_timezone: If True, use EST timezone for timestamps
-        num_workers: Number of parallel upload workers
-        max_file_size: Maximum allowed file size in bytes
-        
-    Returns:
-        List of upload results with timestamps
-    """
-    blob_service_client = initialize_blob_client(storage_account_name, storage_key)
-    total_files = len(file_paths)
-    completed_files = 0
-    results = []
-
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = {
-            executor.submit(
-                upload_single_blob,
-                file_path,
-                local_repo_path,
-                blob_service_client,
-                container_name,
-                destination_folder,
-                use_est_timezone,
-                max_file_size
-            ): file_path for file_path in file_paths
-        }
-        
-        for future in as_completed(futures):
-            result = future.result()
-            results.append(result)
-            completed_files += 1
-            
-            success_count = sum(1 for r in results if r["upload_status"] == "success")
-            print(f"\rProgress: {completed_files}/{total_files} files processed "
-                  f"({success_count} successful, {completed_files - success_count} failed)", 
-                  end="", flush=True)
-
-    success_count = sum(1 for r in results if r["upload_status"] == "success")
-    fail_count = total_files - success_count
-    success_rate = (success_count / total_files) * 100 if total_files > 0 else 0
-    
-    print(f"\n\nUpload completed:")
-    print(f"Total files: {total_files}")
-    print(f"Successful: {success_count}")
-    print(f"Failed: {fail_count}")
-    print(f"Success rate: {success_rate:.2f}%")
-
-    return results
+    print("First-time load of metadata into Delta table completed successfully.")
