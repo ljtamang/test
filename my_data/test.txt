@@ -38,10 +38,13 @@ def first_time_load_file_metadata_to_table(
     # Get the current time in the specified timezone
     current_time = get_standardized_timestamp(timezone, format_string="%Y-%m-%d %H:%M:%S")
     
-    # Convert the current_time string to a timestamp in the specified timezone
+    # Convert the current_time string to a timestamp column once
+    timestamp_col = to_timestamp(lit(current_time), "yyyy-MM-dd HH:mm:ss").cast(TimestampType())
+    
+    # Reuse the timestamp column for both etl_created_at and etl_updated_at
     processed_df = df \
-        .withColumn("etl_created_at", to_timestamp(lit(current_time), "yyyy-MM-dd HH:mm:ss").cast(TimestampType())) \
-        .withColumn("etl_updated_at", to_timestamp(lit(current_time), "yyyy-MM-dd HH:mm:ss").cast(TimestampType()))
+        .withColumn("etl_created_at", timestamp_col) \
+        .withColumn("etl_updated_at", timestamp_col)
     
     processed_df.write.format("delta") \
         .mode("overwrite") \
