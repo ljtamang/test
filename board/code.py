@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import to_timestamp, lit
+from pyspark.sql.functions import to_timestamp, lit, col, when
 from datetime import datetime
 import pytz
 from typing import List, Dict, Union, Optional
@@ -107,7 +107,6 @@ def first_time_load_file_metadata_to_table(
         StructField("file_relative_path", StringType(), nullable=False),
         StructField("file_extension", StringType(), nullable=False),
         StructField("category", StringType(), nullable=False),
-        StructField("git_last_commit_date", StringType(), nullable=False),
         StructField("git_blob_hash", StringType(), nullable=False),
         StructField("upload_status", StringType(), nullable=False),
         StructField("upload_on", StringType(), nullable=True),
@@ -115,31 +114,18 @@ def first_time_load_file_metadata_to_table(
         StructField("error_message", StringType(), nullable=True)
     ])
     
-    # Validate required fields
-    required_fields = [
-        "file_name", "file_relative_path", "file_extension",
-        "category", "git_last_commit_date", "git_blob_hash", "upload_status"
-    ]
-    
-    for metadata in metadata_list:
-        missing_fields = [field for field in required_fields if field not in metadata]
-        if missing_fields:
-            raise ValueError(f"Missing required metadata fields: {', '.join(missing_fields)}")
-    
     initial_df = spark.createDataFrame(metadata_list, schema=schema)
     
     # Get current timestamp
     current_time = get_standardized_timestamp(timezone)
     
     processed_df = initial_df \
-        .withColumn("git_last_commit_date", 
-                   lit(convert_to_standard_timestamp(
-                       initial_df.git_last_commit_date, 
-                       timezone=timezone).isoformat())) \
         .withColumn("upload_on", 
-                   lit(convert_to_standard_timestamp(
-                       initial_df.upload_on, 
-                       timezone=timezone).isoformat() if initial_df.upload_on else None)) \
+                   when(col("upload_on").isNotNull(),
+                        lit(convert_to_standard_timestamp(
+                            col("upload_on"), 
+                            timezone=timezone).isoformat()))
+                   .otherwise(None)) \
         .withColumn("etl_created_at", lit(current_time.isoformat())) \
         .withColumn("etl_updated_at", lit(current_time.isoformat()))
     
@@ -167,7 +153,6 @@ def update_file_metadata(
         StructField("file_relative_path", StringType(), False),
         StructField("file_extension", StringType(), True),
         StructField("category", StringType(), True),
-        StructField("git_last_commit_date", StringType(), True),
         StructField("git_blob_hash", StringType(), True),
         StructField("upload_status", StringType(), True),
         StructField("upload_on", StringType(), True),
@@ -181,14 +166,12 @@ def update_file_metadata(
     current_time = get_standardized_timestamp(timezone)
     
     processed_update_df = update_df \
-        .withColumn("git_last_commit_date", 
-                   lit(convert_to_standard_timestamp(
-                       update_df.git_last_commit_date, 
-                       timezone=timezone).isoformat() if update_df.git_last_commit_date else None)) \
         .withColumn("upload_on", 
-                   lit(convert_to_standard_timestamp(
-                       update_df.upload_on, 
-                       timezone=timezone).isoformat() if update_df.upload_on else None)) \
+                   when(col("upload_on").isNotNull(),
+                        lit(convert_to_standard_timestamp(
+                            col("upload_on"), 
+                            timezone=timezone).isoformat()))
+                   .otherwise(None)) \
         .withColumn("etl_updated_at", lit(current_time.isoformat()))
     
     existing_table = spark.read.format("delta").table("vfs_raw.file_metadata")
@@ -200,7 +183,6 @@ def update_file_metadata(
         "file_name": "updates.file_name",
         "file_extension": "updates.file_extension",
         "category": "updates.category",
-        "git_last_commit_date": "updates.git_last_commit_date",
         "git_blob_hash": "updates.git_blob_hash",
         "upload_status": "updates.upload_status",
         "upload_on": "updates.upload_on",
@@ -220,7 +202,6 @@ if __name__ == "__main__":
             "file_relative_path": "data/example.csv",
             "file_extension": "csv",
             "category": "raw_data",
-            "git_last_commit_date": "2024-01-26T10:00:00Z",
             "git_blob_hash": "abc123",
             "upload_status": "pending",
             "upload_on": None,
@@ -229,18 +210,4 @@ if __name__ == "__main__":
         }
     ]
     
-    # First-time load
     first_time_load_file_metadata_to_table(initial_metadata)
-    
-    # Example metadata for update
-    update_metadata = [
-        {
-            "file_relative_path": "data/example.csv",
-            "upload_status": "completed",
-            "upload_on": "2024-01-26T10:30:00Z",
-            "blob_url": "https://example.com/blob/abc123"
-        }
-    ]
-    
-    # Update existing records
-    update_file_metadata(update_metadata)
