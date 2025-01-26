@@ -1,16 +1,21 @@
-"""Azure Storage File Upload Module.
-
-Provides functionality for parallel file uploads to Azure Blob Storage with progress tracking
-and individual file upload timestamps.
-"""
+"""Azure Storage File Upload Module with ISO 8601 timestamp tracking."""
 
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Union, Optional
 from azure.storage.blob import BlobServiceClient
-from datetime import datetime, timezone
+from datetime import datetime
+import pytz
 
 _blob_service_client_cache: Optional[BlobServiceClient] = None
+
+def get_iso_timestamp() -> str:
+    """Get current UTC timestamp in ISO 8601 format.
+    
+    Returns:
+        str: Timestamp in format 'YYYY-MM-DDThh:mm:ss.ssssss+00:00'
+    """
+    return datetime.now(pytz.UTC).isoformat()
 
 def initialize_blob_client(
     storage_account_name: str,
@@ -19,8 +24,8 @@ def initialize_blob_client(
     """Initialize or retrieve cached Azure Blob Service Client.
     
     Args:
-        storage_account_name: Azure storage account name
-        storage_key: Azure storage account access key
+        storage_account_name (str): Azure storage account name
+        storage_key (str): Azure storage account access key
         
     Returns:
         BlobServiceClient: Instance for Azure Blob operations
@@ -39,18 +44,25 @@ def upload_single_blob(
     destination_folder: str,
     max_file_size: Optional[int] = None
 ) -> Dict[str, Optional[Union[str, datetime]]]:
-    """Upload single file to Azure Storage.
+    """Upload single file to Azure Storage with timestamp tracking.
     
     Args:
-        local_file_path: Full path to local file
-        local_repo_path: Base path of local repository
-        blob_service_client: Azure blob service client
-        container_name: Azure storage container name
-        destination_folder: Target folder in blob storage
-        max_file_size: Maximum allowed file size in bytes
+        local_file_path (str): Full path to local file
+        local_repo_path (str): Base path of local repository
+        blob_service_client (BlobServiceClient): Azure blob service client
+        container_name (str): Azure storage container name
+        destination_folder (str): Target folder in blob storage
+        max_file_size (Optional[int]): Maximum allowed file size in bytes
         
     Returns:
-        Dict containing upload status and timestamp for the file
+        Dict[str, Optional[Union[str, datetime]]]: Upload result containing:
+            - file_path (str): Original file path
+            - file_relative_path (Optional[str]): Path relative to repo
+            - upload_status (str): "success" or "fail"
+            - blob_path (Optional[str]): Path in blob storage
+            - blob_url (Optional[str]): Full URL to blob
+            - error (Optional[str]): Error message if failed
+            - upload_timestamp (Optional[str]): ISO 8601 UTC timestamp of upload
     """
     result = {
         "file_path": local_file_path,
@@ -67,26 +79,26 @@ def upload_single_blob(
             result["error"] = f"File does not exist: {local_file_path}"
             return result
             
-        if max_file_size is not None:
-            file_size = os.path.getsize(local_file_path)
-            if file_size > max_file_size:
-                result["error"] = f"File exceeds maximum size limit of {max_file_size/1024/1024:.2f}MB"
-                return result
+        if max_file_size and os.path.getsize(local_file_path) > max_file_size:
+            result["error"] = f"File exceeds maximum size limit of {max_file_size/1024/1024:.2f}MB"
+            return result
             
         file_relative_path = os.path.relpath(local_file_path, local_repo_path)
         result["file_relative_path"] = file_relative_path
+        result["blob_path"] = os.path.join(destination_folder, file_relative_path)
 
-        blob_path = os.path.join(destination_folder, file_relative_path)
-        result["blob_path"] = blob_path
-
-        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_path)
+        blob_client = blob_service_client.get_blob_client(
+            container=container_name, 
+            blob=result["blob_path"]
+        )
         blob_client.upload_blob(local_file_path, overwrite=True)
 
         result["upload_status"] = "success"
         result["blob_url"] = blob_client.url
-        result["upload_timestamp"] = datetime.now(timezone.utc)
+        result["upload_timestamp"] = get_iso_timestamp()
     except Exception as e:
         result["error"] = str(e)
+    
     return result
 
 def upload_files_to_azure_storage(
@@ -99,20 +111,43 @@ def upload_files_to_azure_storage(
     num_workers: int = 5,
     max_file_size: Optional[int] = None
 ) -> List[Dict[str, Optional[Union[str, datetime]]]]:
-    """Upload multiple files to Azure Storage with progress tracking.
+    """Upload multiple files to Azure Storage with parallel processing.
     
     Args:
-        file_paths: List of file paths to upload
-        local_repo_path: Base path of local repository
-        storage_account_name: Azure storage account name
-        storage_key: Azure storage account key
-        container_name: Azure container name
-        destination_folder: Destination folder in Azure Storage
-        num_workers: Number of parallel upload workers
-        max_file_size: Maximum allowed file size in bytes
+        file_paths (List[str]): List of file paths to upload
+        local_repo_path (str): Base path of local repository
+        storage_account_name (str): Azure storage account name
+        storage_key (str): Azure storage account key
+        container_name (str): Azure container name
+        destination_folder (str): Destination folder in Azure Storage
+        num_workers (int): Number of parallel upload workers
+        max_file_size (Optional[int]): Maximum allowed file size in bytes
         
     Returns:
-        List of dicts with upload status and timestamp for each file
+        List[Dict[str, Optional[Union[str, datetime]]]]: List of upload results.
+        Each result dict contains same fields as upload_single_blob return value.
+        
+    Example Return Value:
+        [
+            {
+                "file_path": "/data/files/document1.pdf",
+                "file_relative_path": "document1.pdf",
+                "upload_status": "success",
+                "blob_path": "uploads/2024/document1.pdf",
+                "blob_url": "https://account.blob.core.windows.net/container/path",
+                "error": None,
+                "upload_timestamp": "2024-01-26T14:30:25.123456+00:00"
+            },
+            {
+                "file_path": "/data/files/large_file.zip", 
+                "file_relative_path": None,
+                "upload_status": "fail",
+                "blob_path": None,
+                "blob_url": None,
+                "error": "File exceeds maximum size limit of 5.00MB",
+                "upload_timestamp": None
+            }
+        ]
     """
     blob_service_client = initialize_blob_client(storage_account_name, storage_key)
     total_files = len(file_paths)
@@ -149,13 +184,13 @@ def upload_files_to_azure_storage(
     print(f"\n\nUpload completed:")
     print(f"Total files: {total_files}")
     print(f"Successful: {success_count}")
-    print(f"Failed: {fail_count}")
+    print(f"Failed: {fail_count}")  
     print(f"Success rate: {success_rate:.2f}%")
 
     return results
 
 if __name__ == "__main__":
-    # Example usage with multiple files
+    # Example usage
     file_paths = [
         "/data/files/document1.pdf",
         "/data/files/document2.pdf",
@@ -165,7 +200,7 @@ if __name__ == "__main__":
     results = upload_files_to_azure_storage(
         file_paths=file_paths,
         local_repo_path="/data/files",
-        storage_account_name="mystorageaccount",
+        storage_account_name="mystorageaccount", 
         storage_key="storage-key-123",
         container_name="mycontainer",
         destination_folder="uploads/2024",
@@ -173,35 +208,11 @@ if __name__ == "__main__":
         max_file_size=5 * 1024 * 1024  # 5MB limit
     )
     
-    # Print individual file results with timestamps
+    # Process results
     for result in results:
         print(f"\nFile: {result['file_path']}")
         print(f"Status: {result['upload_status']}")
         if result['upload_status'] == 'success':
-            print(f"Uploaded at: {result['upload_timestamp'].isoformat()}")
+            print(f"Uploaded at: {result['upload_timestamp']}")
         else:
             print(f"Error: {result['error']}")
-
-"""
-Example Output:
-
-Progress: 3/3 files processed (2 successful, 1 failed)
-
-Upload completed:
-Total files: 3
-Successful: 2
-Failed: 1
-Success rate: 66.67%
-
-File: /data/files/document1.pdf
-Status: success
-Uploaded at: 2024-01-26T14:30:25.123456+00:00
-
-File: /data/files/document2.pdf
-Status: success
-Uploaded at: 2024-01-26T14:30:25.789012+00:00
-
-File: /data/files/large_file.zip
-Status: fail
-Error: File exceeds maximum size limit of 5.00MB
-"""
