@@ -1,37 +1,45 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import col, lit, when, to_timestamp
-from datetime import datetime
-import pytz
+from pyspark.sql.functions import col, lit, to_timestamp
 from typing import List, Dict
 
 def first_time_load_file_metadata_to_table(
     metadata_list: List[Dict],
     timezone: str = "America/New_York"
 ) -> None:
+    """Initial load of file metadata into vfs_raw.file_metadata Delta table.
+
+    Args:
+        metadata_list: List of dicts with:
+            Required: file_name, file_relative_path, file_extension,
+                     category, git_blob_hash, upload_status
+            Optional: upload_on, blob_url, error_message
+        timezone: Timestamp timezone (default: "America/New_York")
+
+    Returns:
+        None. Writes to Delta table using overwrite mode.
+    """
     spark = SparkSession.builder.appName("FirstTimeLoadMetadata").getOrCreate()
     
     schema = StructType([
-        StructField("file_name", StringType(), nullable=False),
-        StructField("file_relative_path", StringType(), nullable=False),
-        StructField("file_extension", StringType(), nullable=False),
-        StructField("category", StringType(), nullable=False),
-        StructField("git_blob_hash", StringType(), nullable=False),
-        StructField("upload_status", StringType(), nullable=False),
-        StructField("upload_on", TimestampType(), nullable=True),
-        StructField("blob_url", StringType(), nullable=True),
-        StructField("error_message", StringType(), nullable=True)
+        StructField("file_name", StringType(), False),
+        StructField("file_relative_path", StringType(), False),
+        StructField("file_extension", StringType(), False),
+        StructField("category", StringType(), False),
+        StructField("git_blob_hash", StringType(), False),
+        StructField("upload_status", StringType(), False),
+        StructField("upload_on", TimestampType(), True),
+        StructField("blob_url", StringType(), True),
+        StructField("error_message", StringType(), True)
     ])
     
-    initial_df = spark.createDataFrame(metadata_list, schema=schema)
+    df = spark.createDataFrame(metadata_list, schema=schema)
     current_time = get_standardized_timestamp(timezone)
     
-    processed_df = initial_df \
+    processed_df = df \
         .withColumn("etl_created_at", to_timestamp(lit(current_time))) \
         .withColumn("etl_updated_at", to_timestamp(lit(current_time)))
     
     processed_df.write.format("delta") \
         .mode("overwrite") \
         .saveAsTable("vfs_raw.file_metadata")
-    
-    print("First-time load of metadata into Delta table completed successfully.")
