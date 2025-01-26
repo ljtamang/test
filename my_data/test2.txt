@@ -1,20 +1,83 @@
-def get_timestamp(use_est: bool = True) -> str:
-    """Get current timestamp in ISO 8601 format, either in EST (default) or UTC.
-    
-    Args:
-        use_est (bool): If True (default), return timestamp in EST. If False, return in UTC.
-    
-    Returns:
-        str: Timestamp in format 'YYYY-MM-DDThh:mm:ss.ssssss±hh:mm'
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
+from pyspark.sql.functions import col, lit, to_timestamp, date_format
+from typing import List, Dict
+from datetime import datetime
+import pytz
+
+def get_standardized_timestamp(
+    timezone: str = "UTC",
+    format_string: str = None
+) -> str:
     """
-    # Get current time in UTC
-    utc_time = datetime.now(pytz.UTC)
+    Get current timestamp in specified timezone and format.
+
+    Args:
+        timezone (str): Target timezone (e.g., "UTC", "America/New_York").
+                       Defaults to "UTC".
+        format_string (str, optional): If provided, returns formatted string.
+                                     If None, returns ISO 8601 formatted string.
+                                     Example: "%Y-%m-%dT%H:%M:%S%z"
+
+    Returns:
+        str: Formatted timestamp string.
+    """
+    try:
+        tz = pytz.timezone(timezone)
+        utc_now = datetime.now(pytz.UTC)
+        local_time = utc_now.astimezone(tz)
+        
+        if format_string:
+            return local_time.strftime(format_string)
+        return local_time.isoformat()  # ISO 8601 format with timezone offset
+        
+    except pytz.exceptions.PytzError as e:
+        raise ValueError(f"Invalid timezone: {timezone}. Error: {str(e)}")
+
+def first_time_load_file_metadata_to_table(
+    metadata_list: List[Dict],
+    timezone: str = "America/New_York"
+) -> None:
+    """Initial load of file metadata into vfs_raw.file_metadata Delta table.
+
+    Args:
+        metadata_list: List of dicts with:
+            Required: file_name, file_relative_path, file_extension,
+                     category, git_blob_hash, upload_status
+            Optional: upload_on, blob_url, error_message
+        timezone: Timestamp timezone (default: "America/New_York")
+
+    Returns:
+        None. Writes to Delta table using overwrite mode.
+    """
+    spark = SparkSession.builder.appName("FirstTimeLoadMetadata").getOrCreate()
     
-    if use_est:
-        # Convert UTC time to EST
-        est_timezone = pytz.timezone('US/Eastern')
-        est_time = utc_time.astimezone(est_timezone)
-        return est_time.isoformat()
-    else:
-        # Return UTC time
-        return utc_time.isoformat()This is file two
+    schema = StructType([
+        StructField("file_name", StringType(), False),
+        StructField("file_relative_path", StringType(), False),
+        StructField("file_extension", StringType(), False),
+        StructField("category", StringType(), False),
+        StructField("git_blob_hash", StringType(), False),
+        StructField("upload_status", StringType(), False),
+        StructField("upload_on", TimestampType(), True),
+        StructField("blob_url", StringType(), True),
+        StructField("error_message", StringType(), True)
+    ])
+    
+    df = spark.createDataFrame(metadata_list, schema=schema)
+    
+    # Get the current time in the specified timezone with the desired format
+    current_time = get_standardized_timestamp(timezone, format_string="%Y-%m-%dT%H:%M:%S%z")
+    
+    # Convert the current_time string to a timestamp column
+    timestamp_col = to_timestamp(lit(current_time), "yyyy-MM-dd'T'HH:mm:ssXXX")
+    
+    # Reuse the timestamp column for both etl_created_at and etl_updated_at
+    processed_df = df \
+        .withColumn("etl_created_at", timestamp_col) \
+        .withColumn("etl_updated_at", timestamp_col)
+    
+    # Save the DataFrame to the Delta table
+    processed_df.write.format("delta") \
+        .mode("overwrite") \
+        .saveAsTable("vfs_raw.file_metadata")
