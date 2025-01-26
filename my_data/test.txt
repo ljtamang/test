@@ -9,7 +9,15 @@ def initialize_blob_client(
     storage_account_name: str, 
     storage_key: str
 ) -> BlobServiceClient:
-    """Initialize or get existing Azure Blob Service Client."""
+    """Initialize or get existing Azure Blob Service Client.
+    
+    Args:
+        storage_account_name (str): Azure storage account name
+        storage_key (str): Azure storage account access key
+    
+    Returns:
+        BlobServiceClient: Azure blob service client instance
+    """
     global _blob_service_client_cache
     if _blob_service_client_cache is None:
         connection_string = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={storage_key};EndpointSuffix=core.windows.net"
@@ -27,7 +35,25 @@ def upload_single_blob(
     destination_folder: str,
     max_file_size: Optional[int] = None
 ) -> Dict[str, Optional[str]]:
-    """Upload a single file to Azure Blob Storage."""
+    """Upload a single file to Azure Blob Storage.
+    
+    Args:
+        local_file_path (str): Full path to local file
+        local_repo_path (str): Base path of local repository
+        blob_service_client (BlobServiceClient): Azure blob service client
+        container_name (str): Azure storage container name
+        destination_folder (str): Target folder in blob storage
+        max_file_size (Optional[int]): Maximum allowed file size in bytes
+    
+    Returns:
+        Dict[str, Optional[str]]: Upload status containing:
+            file_path: Original file path
+            file_relative_path: Path relative to repo
+            upload_status: Upload status ("success"/"fail")
+            blob_path: Path in blob storage
+            blob_url: Full URL to blob
+            error: Error message if failed
+    """
     result = {
         "file_path": local_file_path,
         "file_relative_path": None,
@@ -63,7 +89,7 @@ def upload_single_blob(
         result["error"] = str(e)
     return result
 
-def upload_blobs_parallel(
+def upload_files_to_azure_storage(
     file_paths: List[str],
     local_repo_path: str,
     storage_account_name: str,
@@ -73,7 +99,21 @@ def upload_blobs_parallel(
     num_workers: int = 5,
     max_file_size: Optional[int] = None
 ) -> List[Dict[str, Optional[str]]]:
-    """Upload multiple files to Azure Blob Storage in parallel."""
+    """Upload multiple files to Azure Blob Storage in parallel.
+    
+    Args:
+        file_paths (List[str]): List of file paths to upload
+        local_repo_path (str): Base path of local repository
+        storage_account_name (str): Azure storage account name
+        storage_key (str): Azure storage account access key
+        container_name (str): Azure storage container name
+        destination_folder (str): Target folder in blob storage
+        num_workers (int, optional): Number of parallel workers. Defaults to 5.
+        max_file_size (Optional[int], optional): Maximum allowed file size in bytes. Defaults to None.
+    
+    Returns:
+        List[Dict[str, Optional[str]]]: List of upload status dictionaries for each file
+    """
     blob_service_client = initialize_blob_client(storage_account_name, storage_key)
 
     results = []
@@ -87,3 +127,49 @@ def upload_blobs_parallel(
             results.append(future.result())
 
     return results
+
+# Example Usage
+if __name__ == "__main__":
+    # Example 1: Upload files with no size limit
+    results = upload_files_to_azure_storage(
+        file_paths=[
+            "/data/files/document1.pdf",
+            "/data/files/image1.jpg"
+        ],
+        local_repo_path="/data/files",
+        storage_account_name="mystorageaccount",
+        storage_key="storage-key-123",
+        container_name="mycontainer",
+        destination_folder="uploads/2024"
+    )
+    
+    # Expected output for successful upload:
+    # [{
+    #     "file_path": "/data/files/document1.pdf",
+    #     "file_relative_path": "document1.pdf",
+    #     "upload_status": "success",
+    #     "blob_path": "uploads/2024/document1.pdf",
+    #     "blob_url": "https://mystorageaccount.blob.core.windows.net/mycontainer/uploads/2024/document1.pdf",
+    #     "error": None
+    # }]
+
+    # Example 2: Upload with 5MB size limit
+    results = upload_files_to_azure_storage(
+        file_paths=["/data/files/large_file.zip"],
+        local_repo_path="/data/files",
+        storage_account_name="mystorageaccount",
+        storage_key="storage-key-123",
+        container_name="mycontainer",
+        destination_folder="uploads/2024",
+        max_file_size=5 * 1024 * 1024  # 5MB
+    )
+    
+    # Expected output for failed upload (file too large):
+    # [{
+    #     "file_path": "/data/files/large_file.zip",
+    #     "file_relative_path": None,
+    #     "upload_status": "fail",
+    #     "blob_path": None,
+    #     "blob_url": None,
+    #     "error": "File exceeds maximum size limit of 5.00MB"
+    # }]
