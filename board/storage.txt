@@ -18,61 +18,93 @@ CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
 )
 LOCATION 'vfs/raw/metadata';
 
-
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import to_timestamp, date_format, current_timestamp
+from pyspark.sql.functions import col, lit, when
+from datetime import datetime
+import pytz
 from typing import List, Dict
 
-def first_time_load_metadata_to_delta_table(metadata_list: List[Dict]):
+def first_time_load_file_metadata_to_table(
+    metadata_list: List[Dict],
+    timezone: str = "America/New_York"
+) -> None:
     """
-    Performs the first-time load of file metadata into the vfs_raw.file_metadata Delta table.
-    Uses overwrite mode to ensure the table is fresh and doesn't contain duplicates.
-
+    Load file metadata into vfs_raw.file_metadata Delta table using overwrite mode.
+    
     Args:
-        metadata_list: List of dictionaries, where each dictionary contains metadata for a file.
-                      Each dictionary must have keys: file_name, file_relative_path, file_extension,
-                      category, git_last_commit_date, git_blob_hash, upload_status, upload_on, blob_url, error_message.
+        metadata_list (List[Dict]): List of dictionaries containing file metadata.
+                                  Required fields: file_name, file_relative_path, file_extension,
+                                  category, git_blob_hash, upload_status
+                                  Optional fields: upload_on, blob_url, error_message
+        timezone (str): Timezone for timestamps. Defaults to "America/New_York"
     """
+    # Get spark session
     spark = SparkSession.builder.appName("FirstTimeLoadMetadata").getOrCreate()
     
-    # Define the schema explicitly
+    # Define schema
     schema = StructType([
         StructField("file_name", StringType(), nullable=False),
         StructField("file_relative_path", StringType(), nullable=False),
         StructField("file_extension", StringType(), nullable=False),
         StructField("category", StringType(), nullable=False),
-        StructField("git_last_commit_date", StringType(), nullable=False),  # Temporarily as StringType
         StructField("git_blob_hash", StringType(), nullable=False),
         StructField("upload_status", StringType(), nullable=False),
-        StructField("upload_on", StringType(), nullable=True),  # Temporarily as StringType
+        StructField("upload_on", StringType(), nullable=True),
         StructField("blob_url", StringType(), nullable=True),
         StructField("error_message", StringType(), nullable=True)
     ])
     
-    # Convert metadata list to DataFrame with explicit schema
+    # Create initial dataframe
     initial_df = spark.createDataFrame(metadata_list, schema=schema)
     
-    # Convert git_last_commit_date from string to TimestampType
-    # Assuming the format is ISO 8601 with timezone (e.g., "2024-11-25T11:30:31-05:00")
-    initial_df = initial_df.withColumn(
-        "git_last_commit_date",
-        to_timestamp("git_last_commit_date", "yyyy-MM-dd'T'HH:mm:ssXXX")  # ISO 8601 format with timezone
-    )
+    # Get current timestamp
+    current_time = get_standardized_timestamp(timezone)
     
-    # Convert upload_on from string to TimestampType (if provided)
-    initial_df = initial_df.withColumn(
-        "upload_on",
-        to_timestamp("upload_on", "yyyy-MM-dd'T'HH:mm:ssXXX")  # ISO 8601 format with timezone
-    )
+    # Process dataframe
+    processed_df = initial_df \
+        .withColumn("upload_on", 
+                   when(col("upload_on").isNotNull(),
+                        lit(convert_to_standard_timestamp(
+                            col("upload_on"), 
+                            timezone=timezone)))
+                   .otherwise(None)) \
+        .withColumn("etl_created_at", lit(current_time)) \
+        .withColumn("etl_updated_at", lit(current_time))
     
-    # Add etl_created_at and etl_updated_at fields with current timestamp in ISO 8601 format
-    initial_df = initial_df.withColumn("etl_created_at", date_format(current_timestamp(), "yyyy-MM-dd'T'HH:mm:ss.SSSZ")) \
-                           .withColumn("etl_updated_at", date_format(current_timestamp(), "yyyy-MM-dd'T'HH:mm:ss.SSSZ"))
-    
-    # Insert all records into the Delta table in overwrite mode
-    initial_df.write.format("delta") \
-        .mode("overwrite") \  # Overwrite the table to ensure it's fresh
+    # Write to delta table
+    processed_df.write.format("delta") \
+        .mode("overwrite") \
         .saveAsTable("vfs_raw.file_metadata")
     
     print("First-time load of metadata into Delta table completed successfully.")
+
+if __name__ == "__main__":
+    # Example usage
+    metadata_list = [
+        {
+            "file_name": "example.csv",
+            "file_relative_path": "data/example.csv",
+            "file_extension": "csv",
+            "category": "raw_data",
+            "git_blob_hash": "abc123",
+            "upload_status": "pending",
+            "upload_on": None,
+            "blob_url": None,
+            "error_message": None
+        },
+        {
+            "file_name": "test.json",
+            "file_relative_path": "data/test.json",
+            "file_extension": "json",
+            "category": "raw_data",
+            "git_blob_hash": "def456",
+            "upload_status": "completed",
+            "upload_on": "2024-01-26T10:00:00Z",
+            "blob_url": "https://example.com/blob/def456",
+            "error_message": None
+        }
+    ]
+    
+    # Load metadata
+    first_time_load_file_metadata_to_table(metadata_list)
