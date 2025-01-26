@@ -9,15 +9,7 @@ def initialize_blob_client(
     storage_account_name: str, 
     storage_key: str
 ) -> BlobServiceClient:
-    """Initialize or get existing Azure Blob Service Client.
-    
-    Args:
-        storage_account_name (str): Azure storage account name
-        storage_key (str): Azure storage account access key
-    
-    Returns:
-        BlobServiceClient: Azure blob service client instance
-    """
+    """Initialize or get existing Azure Blob Service Client."""
     global _blob_service_client_cache
     if _blob_service_client_cache is None:
         connection_string = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={storage_key};EndpointSuffix=core.windows.net"
@@ -35,29 +27,11 @@ def upload_single_blob(
     destination_folder: str,
     max_file_size: Optional[int] = None
 ) -> Dict[str, Optional[str]]:
-    """Upload a single file to Azure Blob Storage.
-    
-    Args:
-        local_file_path (str): Full path to local file
-        local_repo_path (str): Base path of local repository
-        blob_service_client (BlobServiceClient): Azure blob service client
-        container_name (str): Azure storage container name
-        destination_folder (str): Target folder in blob storage
-        max_file_size (Optional[int]): Maximum allowed file size in bytes
-    
-    Returns:
-        Dict[str, Optional[str]]: Upload status containing:
-            file_path: Original file path
-            relative_path: Path relative to repo
-            status: Upload status ("uploaded"/"failed")
-            blob_path: Path in blob storage
-            blob_url: Full URL to blob
-            error: Error message if failed
-    """
+    """Upload a single file to Azure Blob Storage."""
     result = {
         "file_path": local_file_path,
-        "relative_path": None,
-        "status": "failed",
+        "file_relative_path": None,
+        "upload_status": "fail",
         "blob_path": None,
         "blob_url": None,
         "error": None
@@ -74,16 +48,16 @@ def upload_single_blob(
                 result["error"] = f"File exceeds maximum size limit of {max_file_size/1024/1024:.2f}MB"
                 return result
             
-        relative_path = os.path.relpath(local_file_path, local_repo_path)
-        result["relative_path"] = relative_path
+        file_relative_path = os.path.relpath(local_file_path, local_repo_path)
+        result["file_relative_path"] = file_relative_path
 
-        blob_path = os.path.join(destination_folder, relative_path)
+        blob_path = os.path.join(destination_folder, file_relative_path)
         result["blob_path"] = blob_path
 
         blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_path)
         blob_client.upload_blob(local_file_path, overwrite=True)
 
-        result["status"] = "uploaded"
+        result["upload_status"] = "success"
         result["blob_url"] = blob_client.url
     except Exception as e:
         result["error"] = str(e)
@@ -99,21 +73,7 @@ def upload_blobs_parallel(
     num_workers: int = 5,
     max_file_size: Optional[int] = None
 ) -> List[Dict[str, Optional[str]]]:
-    """Upload multiple files to Azure Blob Storage in parallel.
-    
-    Args:
-        file_paths (List[str]): List of file paths to upload
-        local_repo_path (str): Base path of local repository
-        storage_account_name (str): Azure storage account name
-        storage_key (str): Azure storage account access key
-        container_name (str): Azure storage container name
-        destination_folder (str): Target folder in blob storage
-        num_workers (int, optional): Number of parallel workers. Defaults to 5.
-        max_file_size (Optional[int], optional): Maximum allowed file size in bytes. Defaults to None.
-    
-    Returns:
-        List[Dict[str, Optional[str]]]: List of upload status dictionaries for each file
-    """
+    """Upload multiple files to Azure Blob Storage in parallel."""
     blob_service_client = initialize_blob_client(storage_account_name, storage_key)
 
     results = []
@@ -127,13 +87,3 @@ def upload_blobs_parallel(
             results.append(future.result())
 
     return results
-
-if __name__ == "__main__":
-    results = upload_blobs_parallel(
-        file_paths=["/dbfs/mnt/my_local_repo/file1.txt"],
-        local_repo_path="/dbfs/mnt/my_local_repo",
-        storage_account_name="your_storage_account_name",
-        storage_key="your_storage_account_key",
-        container_name="your_container_name",
-        destination_folder="your_destination_folder"
-    )
