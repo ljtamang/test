@@ -1,41 +1,32 @@
-def deduplicate_by_blob_hash(spark, table_name: str) -> int:
+from pyspark.sql import SparkSession
+from typing import Dict
+
+def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
    """
-   Deduplicate records in a Delta table based on git_blob_hash.
-   For records with same hash, keeps the one with latest etl_updated_at and highest id.
-   
-   Args:
-       spark: SparkSession object
-       table_name: Fully qualified table name (e.g., 'vfs_raw.file_metadata')
-   
-   Returns:
-       Number of duplicate records removed
+   Removes duplicate records based on git_blob_hash, keeping one record when duplicates exist.
    """
-   # Read the source table
-   df = spark.table(table_name)
+   spark = SparkSession.builder.getOrCreate()
    
-   # Create window spec and add rank
-   window_spec = Window.partitionBy("git_blob_hash")\
-                      .orderBy(df.etl_updated_at.desc(), df.id.desc())
-   ranked_df = df.withColumn("rank", row_number().over(window_spec))
-   
-   # Get IDs to keep (rank = 1)
-   ids_to_keep = ranked_df.filter("rank = 1")\
-                         .select("id")\
-                         .rdd.flatMap(lambda x: x)\
-                         .collect()
-   
-   # Get count of duplicates for return value                      
-   duplicate_count = ranked_df.filter("rank > 1").count()
-   
-   # Rewrite table with only non-duplicate records
-   temp_view = f"temp_{table_name.replace('.', '_')}"
-   df.filter(df.id.isin(ids_to_keep))\
-     .createOrReplaceTempView(temp_view)
+   initial_count = spark.table(table_name).count()
    
    spark.sql(f"""
-       TRUNCATE TABLE {table_name};
-       INSERT INTO {table_name}
-       SELECT * FROM {temp_view};
+       DELETE FROM {table_name} 
+       WHERE git_blob_hash IN (
+           SELECT git_blob_hash
+           FROM {table_name}
+           GROUP BY git_blob_hash
+           HAVING count(*) > 1
+       )
+       AND _id NOT IN (
+           SELECT MIN(_id)
+           FROM {table_name}
+           GROUP BY git_blob_hash
+       )
    """)
    
-   return duplicate_count
+   final_count = spark.table(table_name).count()
+   
+   return {
+       "total_records": initial_count,
+       "deleted_records": initial_count - final_count
+   }
