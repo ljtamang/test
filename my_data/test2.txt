@@ -27,7 +27,8 @@ def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
     df_with_row_num = df.withColumn("row_num", row_number().over(window_spec))
     
     # Create a temporary view for the DataFrame with row numbers
-    temp_view_name = f"{table_name}_with_row_num"
+    # Use a single-part name for the temporary view
+    temp_view_name = "file_metadata_with_row_num"
     df_with_row_num.createOrReplaceTempView(temp_view_name)
     
     # Delete rows where row_num is greater than 1 (i.e., duplicates)
