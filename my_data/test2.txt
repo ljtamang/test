@@ -1,5 +1,6 @@
 from pyspark.sql import SparkSession
 from delta.tables import DeltaTable
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 import datetime
 import pytz
 
@@ -13,11 +14,22 @@ def update_file_metadata(upload_results):
     # Initialize Spark session
     spark = SparkSession.builder.appName("UpdateFileMetadata").getOrCreate()
 
-    # Convert the upload results to a DataFrame
-    upload_df = spark.createDataFrame(upload_results)
+    # Define the schema for the upload_results DataFrame
+    schema = StructType([
+        StructField("file_path", StringType(), True),
+        StructField("file_relative_path", StringType(), False),  # This field cannot be null
+        StructField("upload_status", StringType(), False),       # This field cannot be null
+        StructField("blob_path", StringType(), True),
+        StructField("blob_url", StringType(), True),
+        StructField("error", StringType(), True),
+        StructField("upload_timestamp", TimestampType(), True)
+    ])
 
-    # Load the existing Delta table
-    delta_table = DeltaTable.forPath(spark, 'vfs/raw/metadata')
+    # Convert the upload results to a DataFrame with the defined schema
+    upload_df = spark.createDataFrame(upload_results, schema=schema)
+
+    # Load the existing Delta table using the database and table name
+    delta_table = DeltaTable.forName(spark, "vfs_raw.file_metadata")
 
     # Get the current timestamp for etl_updated_at
     current_timestamp = get_standarized_timestamp()
@@ -52,7 +64,7 @@ upload_results = [
         "blob_path": "path/of/blob",
         "blob_url": "url of blob",
         "error": None,
-        "upload_timestamp": "2025-01-27T07:38:37.252232+00:00"
+        "upload_timestamp": datetime.datetime.strptime("2025-01-27T07:38:37.252232+00:00", "%Y-%m-%dT%H:%M:%S.%f%z")
     },
     {
         "file_path": "path/of/file",
@@ -61,7 +73,7 @@ upload_results = [
         "blob_path": "path/of/blob",
         "blob_url": "url of blob",
         "error": None,
-        "upload_timestamp": "2025-01-27T07:38:37.252232+00:00"
+        "upload_timestamp": datetime.datetime.strptime("2025-01-27T07:38:37.252232+00:00", "%Y-%m-%dT%H:%M:%S.%f%z")
     }
 ]
 
