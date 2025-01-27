@@ -1,9 +1,30 @@
-SELECT *
-FROM your_table
-WHERE git_blob_hash IN (
-    SELECT git_blob_hash
-    FROM your_table
-    GROUP BY git_blob_hash
-    HAVING COUNT(*) > 1
-)
-ORDER BY git_blob_hash, etl_updated_at DESC;
+def remove_duplicates_by_hash(table_name: str) -> dict:
+    # Keep randomly one record among ties by adding ARBITRARY() function
+    delete_query = f"""
+    DELETE FROM {table_name} 
+    WHERE git_blob_hash IN (
+        SELECT t.git_blob_hash
+        FROM (
+            SELECT ARBITRARY(*) as arbitrary_record,
+                git_blob_hash
+            FROM {table_name}
+            GROUP BY git_blob_hash
+            HAVING COUNT(*) > 1
+        ) t
+    )
+    AND (git_blob_hash, etl_updated_at) NOT IN (
+        SELECT git_blob_hash, MAX(etl_updated_at)
+        FROM {table_name}
+        GROUP BY git_blob_hash
+    )
+    """
+    
+    spark = SparkSession.builder.getOrCreate()
+    initial_count = spark.table(table_name).count()
+    spark.sql(delete_query)
+    final_count = spark.table(table_name).count()
+    
+    return {
+        "total_records": initial_count,
+        "deleted_records": initial_count - final_count
+    }
