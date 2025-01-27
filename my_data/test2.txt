@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
-from pyspark.sql.functions import row_number, col
+from pyspark.sql.functions import row_number, col, monotonically_increasing_id
 from typing import Dict
 
 def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
@@ -20,22 +20,24 @@ def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
     # Read the table into a DataFrame
     df = spark.table(table_name)
     
+    # Add a unique identifier column
+    df_with_id = df.withColumn("unique_id", monotonically_increasing_id())
+    
     # Define a window specification
     window_spec = Window.partitionBy("git_blob_hash").orderBy(col("etl_updated_at").desc())
     
     # Add a row number column to each row within the window
-    df_with_row_num = df.withColumn("row_num", row_number().over(window_spec))
+    df_with_row_num = df_with_id.withColumn("row_num", row_number().over(window_spec))
     
     # Create a temporary view for the DataFrame with row numbers
-    # Use a single-part name for the temporary view
     temp_view_name = "file_metadata_with_row_num"
     df_with_row_num.createOrReplaceTempView(temp_view_name)
     
     # Delete rows where row_num is greater than 1 (i.e., duplicates)
     delete_query = f"""
     DELETE FROM {table_name}
-    WHERE (git_blob_hash, etl_updated_at) IN (
-        SELECT git_blob_hash, etl_updated_at
+    WHERE unique_id IN (
+        SELECT unique_id
         FROM {temp_view_name}
         WHERE row_num > 1
     )
