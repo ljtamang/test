@@ -1,20 +1,49 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import concat, lit
+from pyspark.sql.functions import when, col, lit
+from datetime import datetime
 
-# Initialize Spark session (if not already initialized)
-spark = SparkSession.builder.appName("FilePaths").getOrCreate()
-
-# Define the root path
-root_path = "/path/to/root/"
-
-# Read the table into a DataFrame
-df = spark.table("vfs_raw.file_metadata")
-
-# Augment the file_relative_path with the root_path to create full file paths
-df = df.withColumn("file_path", concat(lit(root_path), df["file_relative_path"]))
-
-# Select the file_path column and convert it to a list
-file_paths_list = df.select("file_path").rdd.flatMap(lambda x: x).collect()
-
-# Display the list of full file paths
-print(file_paths_list)
+def update_file_metadata(spark, upload_results):
+    """
+    Update file_metadata table based on upload results
+    
+    Args:
+        spark: SparkSession object
+        upload_results: List of dictionaries containing upload results
+    """
+    # Convert upload results to DataFrame
+    results_df = spark.createDataFrame(upload_results)
+    
+    # Get current timestamp
+    current_time = datetime.now()
+    
+    # Update metadata table
+    metadata_table = spark.table("vfs_raw.file_metadata")
+    
+    # Create conditions for updates
+    update_conditions = when(
+        (metadata_table.file_relative_path == results_df.file_relative_path) &
+        (results_df.upload_status == "success"),
+        {
+            "upload_status": lit("uploaded"),
+            "upload_on": col("upload_timestamp"),
+            "blob_url": results_df.blob_url,
+            "etl_updated_at": lit(current_time)
+        }
+    ).when(
+        (metadata_table.file_relative_path == results_df.file_relative_path) &
+        (results_df.upload_status == "fail"),
+        {
+            "upload_status": lit("needs_reupload"),
+            "error_message": results_df.error,
+            "etl_updated_at": lit(current_time)
+        }
+    ).otherwise(
+        {
+            "etl_updated_at": lit(current_time)
+        }
+    )
+    
+    # Perform merge operation
+    metadata_table.alias("target").merge(
+        results_df.alias("source"),
+        "target.file_relative_path = source.file_relative_path"
+    ).whenMatchedUpdate(set=update_conditions).execute()
