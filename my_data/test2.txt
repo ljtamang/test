@@ -1,31 +1,68 @@
-def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
-    spark = SparkSession.builder.getOrCreate()
-    
-    initial_count = spark.table(table_name).count()
-    
-    # Use monotonically_increasing_id() to break ties
-    spark.sql(f"""
-        CREATE OR REPLACE TEMPORARY VIEW temp_ranked AS
-        SELECT *,
-            ROW_NUMBER() OVER (
-                PARTITION BY git_blob_hash 
-                ORDER BY etl_updated_at DESC, monotonically_increasing_id()
-            ) as rn
-        FROM {table_name}
-    """)
-    
-    spark.sql(f"""
-        DELETE FROM {table_name}
-        WHERE git_blob_hash IN (
-            SELECT git_blob_hash 
-            FROM temp_ranked 
-            WHERE rn > 1
-        )
-    """)
-    
-    final_count = spark.table(table_name).count()
-    
-    return {
-        "total_records": initial_count,
-        "deleted_records": initial_count - final_count
+from pyspark.sql import SparkSession
+from delta.tables import DeltaTable
+import datetime
+import pytz
+
+# Function to get the current UTC timestamp in ISO format
+def get_standarized_timestamp():
+    utc_now = datetime.datetime.now(pytz.UTC)
+    utc_now_str = utc_now.isoformat()
+    return utc_now_str
+
+def update_file_metadata(upload_results):
+    # Initialize Spark session
+    spark = SparkSession.builder.appName("UpdateFileMetadata").getOrCreate()
+
+    # Convert the upload results to a DataFrame
+    upload_df = spark.createDataFrame(upload_results)
+
+    # Load the existing Delta table
+    delta_table = DeltaTable.forPath(spark, 'vfs/raw/metadata')
+
+    # Get the current timestamp for etl_updated_at
+    current_timestamp = get_standarized_timestamp()
+
+    # Update the Delta table based on the upload results
+    delta_table.alias("metadata").merge(
+        upload_df.alias("upload"),
+        "metadata.file_relative_path = upload.file_relative_path"
+    ).whenMatchedUpdate(
+        condition="upload.upload_status = 'success'",
+        set={
+            "upload_status": "'uploaded'",
+            "upload_on": "upload.upload_timestamp",
+            "blob_url": "upload.blob_url",
+            "etl_updated_at": f"'{current_timestamp}'"  # Use the standardized timestamp
+        }
+    ).whenMatchedUpdate(
+        condition="upload.upload_status != 'success'",
+        set={
+            "upload_status": "'re_upload'",
+            "error_message": "upload.error",
+            "etl_updated_at": f"'{current_timestamp}'"  # Use the standardized timestamp
+        }
+    ).execute()
+
+# Example usage
+upload_results = [
+    {
+        "file_path": "path/of/file",
+        "file_relative_path": "relative/path/of/file/file.txt",
+        "upload_status": "success",
+        "blob_path": "path/of/blob",
+        "blob_url": "url of blob",
+        "error": None,
+        "upload_timestamp": "2025-01-27T07:38:37.252232+00:00"
+    },
+    {
+        "file_path": "path/of/file",
+        "file_relative_path": "relative/path/of/folder/file/file.txt",
+        "upload_status": "success",
+        "blob_path": "path/of/blob",
+        "blob_url": "url of blob",
+        "error": None,
+        "upload_timestamp": "2025-01-27T07:38:37.252232+00:00"
     }
+]
+
+update_file_metadata(upload_results)
