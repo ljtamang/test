@@ -4,8 +4,7 @@ def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
     WHERE git_blob_hash IN (
         SELECT t.git_blob_hash
         FROM (
-            SELECT FIRST(*) as first_record,
-                git_blob_hash
+            SELECT git_blob_hash
             FROM {table_name}
             GROUP BY git_blob_hash
             HAVING COUNT(*) > 1
