@@ -1,8 +1,20 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
 from pyspark.sql.functions import row_number, col
+from typing import Dict
 
 def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
+    """
+    Removes duplicate rows from a Delta table based on `git_blob_hash`, keeping only the row with the latest `etl_updated_at`.
+
+    Args:
+        table_name (str): The name of the Delta table to remove duplicates from.
+
+    Returns:
+        Dict[str, int]: A dictionary containing:
+            - "total_records": Total records in the table before deletion.
+            - "deleted_records": Number of duplicate records deleted.
+    """
     spark = SparkSession.builder.getOrCreate()
     
     # Read the table into a DataFrame
