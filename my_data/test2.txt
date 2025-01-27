@@ -1,36 +1,5 @@
-def deduplicate_delta_table(
-   table_name: str,
-   dedup_columns: list[str]
-) -> tuple[int, int]:
-   """
-   Deduplicates Delta table keeping record with latest etl_updated_at.
-
-   Args:
-       table_name: Name of delta table including schema 
-       dedup_columns: List of column names to deduplicate on
-
-   Returns:
-       tuple[int, int]: (initial_record_count, deleted_record_count)
-   """
-   initial_count = spark.table(table_name).count()
-   
-   # Create CTE with row numbers
-   spark.sql(f"""
-   WITH ranked_records AS (
-       SELECT *,
-           ROW_NUMBER() OVER (
-               PARTITION BY {','.join(dedup_columns)}
-               ORDER BY etl_updated_at DESC
-           ) as rn
-       FROM {table_name}
-   )
-   DELETE FROM {table_name} t
-   WHERE EXISTS (
-       SELECT 1 FROM ranked_records r
-       WHERE {' AND '.join([f't.{col} = r.{col}' for col in dedup_columns])}
-       AND r.rn > 1
-   )
-   """)
-   
-   final_count = spark.table(table_name).count()
-   return (initial_count, initial_count - final_count)
+SELECT file_relative_path, git_blob_hash, COUNT(*) as duplicate_count
+FROM vfs_raw.file_metadata
+GROUP BY file_relative_path, git_blob_hash
+HAVING COUNT(*) > 1
+ORDER BY duplicate_count DESC;
