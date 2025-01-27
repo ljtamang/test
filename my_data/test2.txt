@@ -2,18 +2,20 @@ def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
     delete_query = f"""
     DELETE FROM {table_name} 
     WHERE git_blob_hash IN (
-        SELECT t.git_blob_hash
-        FROM (
-            SELECT git_blob_hash
-            FROM {table_name}
-            GROUP BY git_blob_hash
-            HAVING COUNT(*) > 1
-        ) t
-    )
-    AND (git_blob_hash, etl_updated_at) NOT IN (
-        SELECT git_blob_hash, MAX(etl_updated_at)
+        SELECT git_blob_hash
         FROM {table_name}
         GROUP BY git_blob_hash
+        HAVING COUNT(*) > 1
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM {table_name} t2
+        WHERE t2.git_blob_hash = {table_name}.git_blob_hash
+        AND t2.etl_updated_at = (
+            SELECT MAX(etl_updated_at)
+            FROM {table_name} t3
+            WHERE t3.git_blob_hash = {table_name}.git_blob_hash
+        )
     )
     """
     
