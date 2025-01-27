@@ -7,104 +7,50 @@ def deduplicate_delta_table(
    dedup_columns: list[str]
 ) -> tuple[int, int]:
    """
-   Deduplicates Delta table records based on specified columns.
-   
+   Deduplicates Delta table keeping latest record based on timestamps.
+
    Args:
-       table_name: Name of delta table (e.g. 'schema.table_name')
+       table_name: Name of delta table including schema 
        dedup_columns: List of column names to deduplicate on
-       
+
    Returns:
-       tuple containing:
-           - Number of records before deduplication
-           - Number of records deleted
-           
+       tuple[int, int]: (initial_record_count, deleted_record_count)
+       
    Raises:
-       ValueError: If table doesn't exist or dedup_columns not in table
+       ValueError: If table doesn't exist
+
+   Example:
+       >>> initial_count, deleted_count = deduplicate_delta_table(
+       ...     "schema.table", 
+       ...     ["git_blob_hash"]
+       ... )
+       >>> print(f"Deleted {deleted_count} of {initial_count} records")
    """
-   # Validate table exists
    if not spark.catalog._jcatalog.tableExists(table_name):
        raise ValueError(f"Table {table_name} does not exist")
        
-   # Get table columns
-   table_cols = spark.table(table_name).columns
-   
-   # Validate dedup columns exist
-   invalid_cols = [col for col in dedup_columns if col not in table_cols]
-   if invalid_cols:
-       raise ValueError(f"Columns not found in table: {invalid_cols}")
-   
-   # Get initial count
    initial_count = spark.table(table_name).count()
    
-   # Create window spec for ranking
    window_spec = Window.partitionBy(dedup_columns).orderBy(
-       F.col("etl_created_at").desc(),
-       F.col("etl_updated_at").desc()
+       F.coalesce(F.col("etl_updated_at"), F.col("etl_created_at")).desc(),
+       F.col("etl_created_at").desc()
    )
    
-   # Rank records
-   ranked_df = spark.table(table_name).withColumn(
+   records_to_keep = spark.table(table_name).withColumn(
        "row_number", 
        F.row_number().over(window_spec)
-   )
-   ranked_df.createOrReplaceTempView("ranked_records")
+   ).filter(F.col("row_number") == 1).drop("row_number")
    
-   # Delete duplicates
+   records_to_keep.createOrReplaceTempView("records_to_keep")
+   
    spark.sql(f"""
-   MERGE INTO {table_name} t
-   USING ranked_records r
-   ON {' AND '.join([f't.{col} = r.{col}' for col in dedup_columns])}
-   WHEN MATCHED AND r.row_number > 1 THEN DELETE
+   DELETE FROM {table_name} t
+   WHERE NOT EXISTS (
+       SELECT 1 
+       FROM records_to_keep k
+       WHERE {' AND '.join([f't.{col} = k.{col}' for col in dedup_columns])}
+   )
    """)
    
-   # Get final count
    final_count = spark.table(table_name).count()
-   records_deleted = initial_count - final_count
-   
-   return (initial_count, records_deleted)
-
-# Example usage:
-data = [
-   ("file1.txt", "hash123", "2024-01-26 10:00:00", "2024-01-26 10:00:00"),
-   ("file1.txt", "hash123", "2024-01-26 11:00:00", "2024-01-26 12:00:00"),
-   ("file2.txt", "hash456", "2024-01-26 12:00:00", "2024-01-26 12:00:00")
-]
-
-# Create test table
-df = spark.createDataFrame(
-   data, 
-   ["file_name", "git_blob_hash", "etl_created_at", "etl_updated_at"]
-)
-df.write.format("delta").mode("overwrite").saveAsTable("test_files")
-
-# Before
-spark.sql("SELECT * FROM test_files ORDER BY etl_created_at").show()
-"""
-+---------+------------+-------------------+-------------------+
-|file_name|git_blob_hash|    etl_created_at|    etl_updated_at|
-+---------+------------+-------------------+-------------------+
-|file1.txt|     hash123|2024-01-26 10:00:00|2024-01-26 10:00:00|
-|file1.txt|     hash123|2024-01-26 11:00:00|2024-01-26 12:00:00|
-|file2.txt|     hash456|2024-01-26 12:00:00|2024-01-26 12:00:00|
-+---------+------------+-------------------+-------------------+
-"""
-
-# Run deduplication
-initial, deleted = deduplicate_delta_table("test_files", ["git_blob_hash"])
-print(f"Initial records: {initial}")
-print(f"Records deleted: {deleted}")
-"""
-Initial records: 3
-Records deleted: 1
-"""
-
-# After
-spark.sql("SELECT * FROM test_files ORDER BY etl_created_at").show()
-"""
-+---------+------------+-------------------+-------------------+
-|file_name|git_blob_hash|    etl_created_at|    etl_updated_at|
-+---------+------------+-------------------+-------------------+
-|file1.txt|     hash123|2024-01-26 11:00:00|2024-01-26 12:00:00|
-|file2.txt|     hash456|2024-01-26 12:00:00|2024-01-26 12:00:00|
-+---------+------------+-------------------+-------------------+
-"""
+   return (initial_count, initial_count - final_count)
