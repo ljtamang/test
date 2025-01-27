@@ -4,12 +4,19 @@ def deduplicate_table(table_name):
     """
     Deduplicates records in the given table based on `git_blob_hash`.
     Keeps the record with the latest `etl_updated_at` and highest `id` in case of a tie.
+    Returns the total number of records deleted.
 
     Args:
         table_name (str): The fully qualified table name (e.g., "vfs_raw.file_metadata").
+
+    Returns:
+        int: Number of records deleted.
     """
     # Initialize Spark session
     spark = SparkSession.builder.getOrCreate()
+
+    # Get the total number of records before deletion
+    count_before = spark.sql(f"SELECT COUNT(*) AS total FROM {table_name}").collect()[0]["total"]
 
     # SQL query to deduplicate the table
     deduplication_query = f"""
@@ -41,7 +48,18 @@ def deduplicate_table(table_name):
 
     # Execute the deduplication query
     spark.sql(deduplication_query)
+
+    # Get the total number of records after deletion
+    count_after = spark.sql(f"SELECT COUNT(*) AS total FROM {table_name}").collect()[0]["total"]
+
+    # Calculate the number of records deleted
+    records_deleted = count_before - count_after
+
     print(f"Deduplication completed for table: {table_name}")
+    print(f"Total records deleted: {records_deleted}")
+
+    return records_deleted
 
 # Example usage
-deduplicate_table("vfs_raw.file_metadata")
+deleted_count = deduplicate_table("vfs_raw.file_metadata")
+print(f"Number of records deleted: {deleted_count}")
