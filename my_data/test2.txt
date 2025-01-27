@@ -1,83 +1,110 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import col, lit, to_timestamp, date_format
-from typing import List, Dict
-from datetime import datetime
-import pytz
+from pyspark.sql import Window
+import pyspark.sql.functions as F
+from typing import Tuple
 
-def get_standardized_timestamp(
-    timezone: str = "UTC",
-    format_string: str = None
-) -> str:
-    """
-    Get current timestamp in specified timezone and format.
+def deduplicate_delta_table(
+   table_name: str,
+   dedup_columns: list[str]
+) -> tuple[int, int]:
+   """
+   Deduplicates Delta table records based on specified columns.
+   
+   Args:
+       table_name: Name of delta table (e.g. 'schema.table_name')
+       dedup_columns: List of column names to deduplicate on
+       
+   Returns:
+       tuple containing:
+           - Number of records before deduplication
+           - Number of records deleted
+           
+   Raises:
+       ValueError: If table doesn't exist or dedup_columns not in table
+   """
+   # Validate table exists
+   if not spark.catalog._jcatalog.tableExists(table_name):
+       raise ValueError(f"Table {table_name} does not exist")
+       
+   # Get table columns
+   table_cols = spark.table(table_name).columns
+   
+   # Validate dedup columns exist
+   invalid_cols = [col for col in dedup_columns if col not in table_cols]
+   if invalid_cols:
+       raise ValueError(f"Columns not found in table: {invalid_cols}")
+   
+   # Get initial count
+   initial_count = spark.table(table_name).count()
+   
+   # Create window spec for ranking
+   window_spec = Window.partitionBy(dedup_columns).orderBy(
+       F.col("etl_created_at").desc(),
+       F.col("etl_updated_at").desc()
+   )
+   
+   # Rank records
+   ranked_df = spark.table(table_name).withColumn(
+       "row_number", 
+       F.row_number().over(window_spec)
+   )
+   ranked_df.createOrReplaceTempView("ranked_records")
+   
+   # Delete duplicates
+   spark.sql(f"""
+   MERGE INTO {table_name} t
+   USING ranked_records r
+   ON {' AND '.join([f't.{col} = r.{col}' for col in dedup_columns])}
+   WHEN MATCHED AND r.row_number > 1 THEN DELETE
+   """)
+   
+   # Get final count
+   final_count = spark.table(table_name).count()
+   records_deleted = initial_count - final_count
+   
+   return (initial_count, records_deleted)
 
-    Args:
-        timezone (str): Target timezone (e.g., "UTC", "America/New_York").
-                       Defaults to "UTC".
-        format_string (str, optional): If provided, returns formatted string.
-                                     If None, returns ISO 8601 formatted string.
-                                     Example: "%Y-%m-%dT%H:%M:%S%z"
+# Example usage:
+data = [
+   ("file1.txt", "hash123", "2024-01-26 10:00:00", "2024-01-26 10:00:00"),
+   ("file1.txt", "hash123", "2024-01-26 11:00:00", "2024-01-26 12:00:00"),
+   ("file2.txt", "hash456", "2024-01-26 12:00:00", "2024-01-26 12:00:00")
+]
 
-    Returns:
-        str: Formatted timestamp string.
-    """
-    try:
-        tz = pytz.timezone(timezone)
-        utc_now = datetime.now(pytz.UTC)
-        local_time = utc_now.astimezone(tz)
-        
-        if format_string:
-            return local_time.strftime(format_string)
-        return local_time.isoformat()  # ISO 8601 format with timezone offset
-        
-    except pytz.exceptions.PytzError as e:
-        raise ValueError(f"Invalid timezone: {timezone}. Error: {str(e)}")
+# Create test table
+df = spark.createDataFrame(
+   data, 
+   ["file_name", "git_blob_hash", "etl_created_at", "etl_updated_at"]
+)
+df.write.format("delta").mode("overwrite").saveAsTable("test_files")
 
-def first_time_load_file_metadata_to_table(
-    metadata_list: List[Dict],
-    timezone: str = "America/New_York"
-) -> None:
-    """Initial load of file metadata into vfs_raw.file_metadata Delta table.
+# Before
+spark.sql("SELECT * FROM test_files ORDER BY etl_created_at").show()
+"""
++---------+------------+-------------------+-------------------+
+|file_name|git_blob_hash|    etl_created_at|    etl_updated_at|
++---------+------------+-------------------+-------------------+
+|file1.txt|     hash123|2024-01-26 10:00:00|2024-01-26 10:00:00|
+|file1.txt|     hash123|2024-01-26 11:00:00|2024-01-26 12:00:00|
+|file2.txt|     hash456|2024-01-26 12:00:00|2024-01-26 12:00:00|
++---------+------------+-------------------+-------------------+
+"""
 
-    Args:
-        metadata_list: List of dicts with:
-            Required: file_name, file_relative_path, file_extension,
-                     category, git_blob_hash, upload_status
-            Optional: upload_on, blob_url, error_message
-        timezone: Timestamp timezone (default: "America/New_York")
+# Run deduplication
+initial, deleted = deduplicate_delta_table("test_files", ["git_blob_hash"])
+print(f"Initial records: {initial}")
+print(f"Records deleted: {deleted}")
+"""
+Initial records: 3
+Records deleted: 1
+"""
 
-    Returns:
-        None. Writes to Delta table using overwrite mode.
-    """
-    spark = SparkSession.builder.appName("FirstTimeLoadMetadata").getOrCreate()
-    
-    schema = StructType([
-        StructField("file_name", StringType(), False),
-        StructField("file_relative_path", StringType(), False),
-        StructField("file_extension", StringType(), False),
-        StructField("category", StringType(), False),
-        StructField("git_blob_hash", StringType(), False),
-        StructField("upload_status", StringType(), False),
-        StructField("upload_on", TimestampType(), True),
-        StructField("blob_url", StringType(), True),
-        StructField("error_message", StringType(), True)
-    ])
-    
-    df = spark.createDataFrame(metadata_list, schema=schema)
-    
-    # Get the current time in the specified timezone with the desired format
-    current_time = get_standardized_timestamp(timezone, format_string="%Y-%m-%dT%H:%M:%S%z")
-    
-    # Convert the current_time string to a timestamp column
-    timestamp_col = to_timestamp(lit(current_time), "yyyy-MM-dd'T'HH:mm:ssXXX")
-    
-    # Reuse the timestamp column for both etl_created_at and etl_updated_at
-    processed_df = df \
-        .withColumn("etl_created_at", timestamp_col) \
-        .withColumn("etl_updated_at", timestamp_col)
-    
-    # Save the DataFrame to the Delta table
-    processed_df.write.format("delta") \
-        .mode("overwrite") \
-        .saveAsTable("vfs_raw.file_metadata")
+# After
+spark.sql("SELECT * FROM test_files ORDER BY etl_created_at").show()
+"""
++---------+------------+-------------------+-------------------+
+|file_name|git_blob_hash|    etl_created_at|    etl_updated_at|
++---------+------------+-------------------+-------------------+
+|file1.txt|     hash123|2024-01-26 11:00:00|2024-01-26 12:00:00|
+|file2.txt|     hash456|2024-01-26 12:00:00|2024-01-26 12:00:00|
++---------+------------+-------------------+-------------------+
+"""
