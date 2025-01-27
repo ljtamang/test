@@ -1,87 +1,35 @@
-from pyspark.sql import SparkSession
-from delta.tables import DeltaTable
-from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import to_timestamp
-import datetime
-import pytz
+def update_file_metadata(
+    spark: SparkSession,
+    upload_results: List[Dict[str, Any]]
+) -> DataFrame:
+    """
+    Updates file metadata in Delta table based on upload results.
 
-# Function to get the current UTC timestamp in ISO format
-def get_standarized_timestamp():
-    utc_now = datetime.datetime.now(pytz.UTC)
-    utc_now_str = utc_now.isoformat()
-    return utc_now_str
+    Args:
+        spark: Active SparkSession for database operations
+        upload_results: List of dictionaries containing:
+            - file_path: Original file path
+            - file_relative_path: Relative path in repository
+            - upload_status: "success" or "fail"
+            - blob_path: Path in blob storage
+            - blob_url: URL of uploaded file
+            - error: Error message if failed
+            - upload_timestamp: Timestamp of upload attempt
 
-def update_file_metadata(upload_results):
-    # Initialize Spark session
-    spark = SparkSession.builder.appName("UpdateFileMetadata").getOrCreate()
+    Returns:
+        DataFrame: Updated metadata table
 
-    # Define the schema for the upload_results DataFrame
-    schema = StructType([
-        StructField("file_path", StringType(), True),
-        StructField("file_relative_path", StringType(), False),  # This field cannot be null
-        StructField("upload_status", StringType(), False),       # This field cannot be null
-        StructField("blob_path", StringType(), True),
-        StructField("blob_url", StringType(), True),
-        StructField("error", StringType(), True),
-        StructField("upload_timestamp", TimestampType(), True)  # Expects a TimestampType
-    ])
-
-    # Convert the upload_results to a DataFrame with the defined schema
-    # Parse the upload_timestamp field from string to TimestampType
-    for result in upload_results:
-        result["upload_timestamp"] = datetime.datetime.strptime(
-            result["upload_timestamp"], "%Y-%m-%dT%H:%M:%S.%f%z"
-        )
-
-    upload_df = spark.createDataFrame(upload_results, schema=schema)
-
-    # Load the existing Delta table using the database and table name
-    delta_table = DeltaTable.forName(spark, "vfs_raw.file_metadata")
-
-    # Get the current timestamp for etl_updated_at
-    current_timestamp = get_standarized_timestamp()
-
-    # Update the Delta table based on the upload results
-    delta_table.alias("metadata").merge(
-        upload_df.alias("upload"),
-        "metadata.file_relative_path = upload.file_relative_path"
-    ).whenMatchedUpdate(
-        condition="upload.upload_status = 'success'",
-        set={
-            "upload_status": "'uploaded'",
-            "upload_on": "upload.upload_timestamp",
-            "blob_url": "upload.blob_url",
-            "etl_updated_at": f"'{current_timestamp}'"  # Use the standardized timestamp
-        }
-    ).whenMatchedUpdate(
-        condition="upload.upload_status != 'success'",
-        set={
-            "upload_status": "'re_upload'",
-            "error_message": "upload.error",
-            "etl_updated_at": f"'{current_timestamp}'"  # Use the standardized timestamp
-        }
-    ).execute()
-
-# Example usage
-upload_results = [
-    {
-        "file_path": "path/of/file",
-        "file_relative_path": "relative/path/of/file/file.txt",
-        "upload_status": "success",
-        "blob_path": "path/of/blob",
-        "blob_url": "url of blob",
-        "error": None,
-        "upload_timestamp": "2025-01-27T08:20:33.914523+00:00"  # This is a string
-    },
-    {
-        "file_path": "path/of/file",
-        "file_relative_path": "relative/path/of/folder/file/file.txt",
-        "upload_status": "success",
-        "blob_path": "path/of/blob",
-        "blob_url": "url of blob",
-        "error": None,
-        "upload_timestamp": "2025-01-27T08:20:33.914523+00:00"  # This is a string
-    }
-]
-
-update_file_metadata(upload_results)
+    Example:
+        results = [
+            {
+                "file_path": "path/file.txt",
+                "file_relative_path": "relative/file.txt",
+                "upload_status": "success",
+                "blob_path": "blob/path",
+                "blob_url": "https://...",
+                "error": None,
+                "upload_timestamp": "2025-01-27T07:38:37.252232+00:00"
+            }
+        ]
+        update_file_metadata(spark, results)
+    """
