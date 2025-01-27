@@ -18,6 +18,23 @@ CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
 )
 LOCATION 'vfs/raw/metadata';
 
+CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
+    id BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) COMMENT 'Unique identifier for each record',
+    file_name STRING COMMENT 'Name of the file',
+    file_relative_path STRING COMMENT 'Relative path of the file in the repository',
+    file_extension STRING COMMENT 'File extension (e.g., md, txt, pdf)',
+    category STRING COMMENT 'Category or type of the file (e.g., research_findings)',
+    git_last_commit_date TIMESTAMP COMMENT 'Timestamp of the last Git commit for the file',
+    git_blob_hash STRING COMMENT 'Git blob hash (unique identifier for the file content)',
+    upload_status STRING COMMENT 'Status of the file upload (e.g., pending, needs_reupload, uploaded)',
+    upload_on TIMESTAMP COMMENT 'Timestamp when the file was uploaded to Azure',
+    blob_url STRING COMMENT 'URL of the file in Azure Blob Storage',
+    error_message STRING COMMENT 'Error message if the file upload failed',
+    etl_created_at TIMESTAMP COMMENT 'Timestamp when the record was created in the Delta table',
+    etl_updated_at TIMESTAMP COMMENT 'Timestamp when the record was last updated in the Delta table'
+)
+LOCATION 'vfs/raw/metadata';
+
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 from pyspark.sql.functions import col, lit, to_timestamp
