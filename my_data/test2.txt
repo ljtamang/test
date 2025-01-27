@@ -1,32 +1,35 @@
 def remove_duplicates_by_hash(table_name: str) -> dict:
    """
-   Identifies duplicate records based on git_blob_hash and returns statistics.
+   Removes duplicate records keeping the latest by etl_updated_at for each git_blob_hash.
+   Returns statistics and deleted hashes.
    """
-   query = f"""
-   WITH CTE AS (
-       SELECT *,
-           ROW_NUMBER() OVER (
-               PARTITION BY git_blob_hash
-               ORDER BY etl_updated_at DESC
-           ) AS row_num
-       FROM {table_name}
+   # Query to identify and delete duplicates
+   delete_query = f"""
+   DELETE FROM {table_name}
+   WHERE (git_blob_hash, etl_updated_at) IN (
+       SELECT git_blob_hash, etl_updated_at
+       FROM (
+           SELECT *,
+               ROW_NUMBER() OVER (
+                   PARTITION BY git_blob_hash
+                   ORDER BY etl_updated_at DESC
+               ) AS row_num
+           FROM {table_name}
+       )
+       WHERE row_num > 1
    )
-   SELECT 
-       git_blob_hash,
-       COUNT(*) as records_to_delete
-   FROM CTE 
-   WHERE row_num > 1
-   GROUP BY git_blob_hash
    """
    
    spark = SparkSession.builder.getOrCreate()
-   duplicate_df = spark.sql(query)
+   initial_count = spark.table(table_name).count()
    
-   duplicate_hashes = [row.git_blob_hash for row in duplicate_df.collect()]
-   total_duplicates = sum(row.records_to_delete for row in duplicate_df.collect())
+   # Execute deletion
+   spark.sql(delete_query)
+   
+   final_count = spark.table(table_name).count()
+   deleted_count = initial_count - final_count
    
    return {
-       "total_records": spark.table(table_name).count(),
-       "duplicate_hashes": duplicate_hashes,
-       "total_duplicates": total_duplicates
+       "total_records": initial_count,
+       "deleted_records": deleted_count
    }
