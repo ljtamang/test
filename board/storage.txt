@@ -1,132 +1,41 @@
--- Create database if it doesn't exist
-CREATE DATABASE IF NOT EXISTS vfs_raw;
-
--- Create the file_metadata table in the vfs_raw database with a custom location
-CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
-    file_name STRING COMMENT 'Name of the file',
-    file_relative_path STRING COMMENT 'Relative path of the file in the repository',
-    file_extension STRING COMMENT 'File extension (e.g., md, txt, pdf)',
-    category STRING COMMENT 'Category or type of the file (e.g., research_findings)',
-    git_last_commit_date TIMESTAMP COMMENT 'Timestamp of the last Git commit for the file',
-    git_blob_hash STRING COMMENT 'Git blob hash (unique identifier for the file content)',
-    upload_status STRING COMMENT 'Status of the file upload (e.g., pending, needs_reupload, uploaded)',
-    upload_on TIMESTAMP COMMENT 'Timestamp when the file was uploaded to Azure',
-    blob_url STRING COMMENT 'URL of the file in Azure Blob Storage',
-    error_message STRING COMMENT 'Error message if the file upload failed',
-    etl_created_at TIMESTAMP COMMENT 'Timestamp when the record was created in the Delta table',
-    etl_updated_at TIMESTAMP COMMENT 'Timestamp when the record was last updated in the Delta table'
-)
-LOCATION 'vfs/raw/metadata';
-
-CREATE TABLE IF NOT EXISTS vfs_raw.file_metadata (
-    id BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) COMMENT 'Unique identifier for each record',
-    file_name STRING COMMENT 'Name of the file',
-    file_relative_path STRING COMMENT 'Relative path of the file in the repository',
-    file_extension STRING COMMENT 'File extension (e.g., md, txt, pdf)',
-    category STRING COMMENT 'Category or type of the file (e.g., research_findings)',
-    git_last_commit_date TIMESTAMP COMMENT 'Timestamp of the last Git commit for the file',
-    git_blob_hash STRING COMMENT 'Git blob hash (unique identifier for the file content)',
-    upload_status STRING COMMENT 'Status of the file upload (e.g., pending, needs_reupload, uploaded)',
-    upload_on TIMESTAMP COMMENT 'Timestamp when the file was uploaded to Azure',
-    blob_url STRING COMMENT 'URL of the file in Azure Blob Storage',
-    error_message STRING COMMENT 'Error message if the file upload failed',
-    etl_created_at TIMESTAMP COMMENT 'Timestamp when the record was created in the Delta table',
-    etl_updated_at TIMESTAMP COMMENT 'Timestamp when the record was last updated in the Delta table'
-)
-LOCATION 'vfs/raw/metadata';
-
-from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import col, lit, to_timestamp
-from typing import List, Dict
-from datetime import datetime
-import pytz
-
-def get_standardized_timestamp(
-    timezone: str = "UTC",
-    format_string: str = None
-) -> str:
-    """
-    Get current timestamp in specified timezone and format.
-
-    Args:
-        timezone (str): Target timezone (e.g., "UTC", "America/New_York").
-                       Defaults to "UTC".
-        format_string (str, optional): If provided, returns formatted string.
-                                     If None, returns ISO 8601 formatted string.
-                                     Example: "%Y-%m-%dT%H:%M:%S%z"
-
-    Returns:
-        str: Formatted timestamp string.
-    """
-    try:
-        tz = pytz.timezone(timezone)
-        utc_now = datetime.now(pytz.UTC)
-        local_time = utc_now.astimezone(tz)
-        
-        if format_string:
-            return local_time.strftime(format_string)
-        return local_time.isoformat()  # ISO 8601 format with timezone offset
-        
-    except pytz.exceptions.PytzError as e:
-        raise ValueError(f"Invalid timezone: {timezone}. Error: {str(e)}")
-
-def first_time_load_file_metadata_to_table(
-    metadata_list: List[Dict],
-    timezone: str = "America/New_York"
-) -> None:
-    """Initial load of file metadata into vfs_raw.file_metadata Delta table.
-
-    Args:
-        metadata_list: List of dicts with:
-            Required: file_name, file_relative_path, file_extension,
-                     category, git_blob_hash, upload_status
-            Optional: upload_on, blob_url, error_message
-        timezone: Timestamp timezone (default: "America/New_York")
-
-    Returns:
-        None. Writes to Delta table using overwrite mode.
-    """
-    spark = SparkSession.builder.appName("FirstTimeLoadMetadata").getOrCreate()
-    
-    # Define the schema of the input data (without etl_created_at and etl_updated_at)
-    input_schema = StructType([
-        StructField("file_name", StringType(), False),
-        StructField("file_relative_path", StringType(), False),
-        StructField("file_extension", StringType(), False),
-        StructField("category", StringType(), False),
-        StructField("git_blob_hash", StringType(), False),
-        StructField("upload_status", StringType(), False),
-        StructField("upload_on", TimestampType(), True),
-        StructField("blob_url", StringType(), True),
-        StructField("error_message", StringType(), True)
-    ])
-    
-    # Create the DataFrame from the input data
-    df = spark.createDataFrame(metadata_list, schema=input_schema)
-    
-    # Get the current time in the specified timezone with the desired format
-    current_time = get_standardized_timestamp(timezone, format_string="%Y-%m-%dT%H:%M:%S%z")
-    
-    # Convert the current_time string to a timestamp column
-    timestamp_col = to_timestamp(lit(current_time), "yyyy-MM-dd'T'HH:mm:ssXXX")
-    
-    # Add etl_created_at and etl_updated_at columns to the DataFrame
-    processed_df = df \
-        .withColumn("etl_created_at", timestamp_col) \
-        .withColumn("etl_updated_at", timestamp_col)
-    
-    # Debug: Print the final DataFrame schema and data
-    print("Final DataFrame Schema:")
-    processed_df.printSchema()
-    print("Final DataFrame Data:")
-    processed_df.show(truncate=False)
-    
-    # Save the DataFrame to the Delta table with mergeSchema option
-    processed_df.write.format("delta") \
-        .mode("overwrite") \
-        .option("mergeSchema", "true") \
-        .saveAsTable("vfs_raw.file_metadata")
-    
-    # Load metadata
-    first_time_load_file_metadata_to_table(metadata_list)
+def deduplicate_by_blob_hash(spark, table_name: str) -> int:
+   """
+   Deduplicate records in a Delta table based on git_blob_hash.
+   For records with same hash, keeps the one with latest etl_updated_at and highest id.
+   
+   Args:
+       spark: SparkSession object
+       table_name: Fully qualified table name (e.g., 'vfs_raw.file_metadata')
+   
+   Returns:
+       Number of duplicate records removed
+   """
+   # Read the source table
+   df = spark.table(table_name)
+   
+   # Create window spec and add rank
+   window_spec = Window.partitionBy("git_blob_hash")\
+                      .orderBy(df.etl_updated_at.desc(), df.id.desc())
+   ranked_df = df.withColumn("rank", row_number().over(window_spec))
+   
+   # Get IDs to keep (rank = 1)
+   ids_to_keep = ranked_df.filter("rank = 1")\
+                         .select("id")\
+                         .rdd.flatMap(lambda x: x)\
+                         .collect()
+   
+   # Get count of duplicates for return value                      
+   duplicate_count = ranked_df.filter("rank > 1").count()
+   
+   # Rewrite table with only non-duplicate records
+   temp_view = f"temp_{table_name.replace('.', '_')}"
+   df.filter(df.id.isin(ids_to_keep))\
+     .createOrReplaceTempView(temp_view)
+   
+   spark.sql(f"""
+       TRUNCATE TABLE {table_name};
+       INSERT INTO {table_name}
+       SELECT * FROM {temp_view};
+   """)
+   
+   return duplicate_count
