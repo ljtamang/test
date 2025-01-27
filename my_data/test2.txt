@@ -1,5 +1,16 @@
-SELECT file_relative_path, git_blob_hash, COUNT(*) as duplicate_count
+INSERT INTO vfs_raw.file_metadata 
+SELECT 
+ file_name,
+ file_relative_path,
+ file_extension,
+ category,
+ git_last_commit_date,
+ git_blob_hash,
+ upload_status,
+ upload_on,
+ blob_url,
+ error_message,
+ current_timestamp() as etl_created_at,
+ current_timestamp() as etl_updated_at
 FROM vfs_raw.file_metadata
-GROUP BY file_relative_path, git_blob_hash
-HAVING COUNT(*) > 1
-ORDER BY duplicate_count DESC;
+LIMIT 1;
