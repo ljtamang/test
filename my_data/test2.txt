@@ -1,54 +1,54 @@
-from pyspark.sql import Window
-import pyspark.sql.functions as F
-from typing import Tuple
+
+
+# Check duplicates
+dupes = spark.table("vfs_raw.file_metadata") \
+    .groupBy("git_blob_hash") \
+    .agg(F.count("*").alias("count")) \
+    .filter("count > 1")
+dupes.show()
+
 
 def deduplicate_delta_table(
    table_name: str,
    dedup_columns: list[str]
 ) -> tuple[int, int]:
    """
-   Deduplicates Delta table keeping latest record based on timestamps.
+   Deduplicates Delta table by keeping record with latest etl_updated_at.
 
    Args:
-       table_name: Name of delta table including schema 
-       dedup_columns: List of column names to deduplicate on
+       table_name: Name of delta table including schema
+       dedup_columns: List of column names to deduplicate on 
 
    Returns:
        tuple[int, int]: (initial_record_count, deleted_record_count)
-       
-   Raises:
-       ValueError: If table doesn't exist
-
-   Example:
-       >>> initial_count, deleted_count = deduplicate_delta_table(
-       ...     "schema.table", 
-       ...     ["git_blob_hash"]
-       ... )
-       >>> print(f"Deleted {deleted_count} of {initial_count} records")
    """
-   if not spark.catalog._jcatalog.tableExists(table_name):
-       raise ValueError(f"Table {table_name} does not exist")
-       
    initial_count = spark.table(table_name).count()
    
-   window_spec = Window.partitionBy(dedup_columns).orderBy(
-       F.coalesce(F.col("etl_updated_at"), F.col("etl_created_at")).desc(),
-       F.col("etl_created_at").desc()
-   )
+   # First verify if duplicates exist
+   dupes_df = spark.table(table_name) \
+       .groupBy(dedup_columns) \
+       .agg(F.count("*").alias("count")) \
+       .filter("count > 1")
    
-   records_to_keep = spark.table(table_name).withColumn(
-       "row_number", 
-       F.row_number().over(window_spec)
-   ).filter(F.col("row_number") == 1).drop("row_number")
+   if dupes_df.count() == 0:
+       return (initial_count, 0)
+       
+   window_spec = Window.partitionBy(dedup_columns) \
+                      .orderBy(F.col("etl_updated_at").desc())
    
-   records_to_keep.createOrReplaceTempView("records_to_keep")
+   latest_records = spark.table(table_name) \
+       .withColumn("row_num", F.row_number().over(window_spec)) \
+       .filter("row_num = 1") \
+       .drop("row_num")
+   
+   latest_records.createOrReplaceTempView("latest_records")
    
    spark.sql(f"""
-   DELETE FROM {table_name} t
-   WHERE NOT EXISTS (
-       SELECT 1 
-       FROM records_to_keep k
-       WHERE {' AND '.join([f't.{col} = k.{col}' for col in dedup_columns])}
+   DELETE FROM {table_name} t 
+   WHERE EXISTS (
+       SELECT 1 FROM latest_records l
+       WHERE {' AND '.join([f't.{col} = l.{col}' for col in dedup_columns])}
+       AND t.etl_updated_at < l.etl_updated_at
    )
    """)
    
