@@ -1,15 +1,13 @@
 def remove_duplicates_by_hash(table_name: str) -> dict:
    """
-   Removes duplicate records keeping the latest by etl_updated_at for each git_blob_hash.
-   Returns statistics and deleted hashes.
+   Removes duplicate records keeping latest by etl_updated_at for each git_blob_hash.
    """
-   # Query to identify and delete duplicates
    delete_query = f"""
-   DELETE FROM {table_name}
-   WHERE (git_blob_hash, etl_updated_at) IN (
-       SELECT git_blob_hash, etl_updated_at
+   DELETE FROM {table_name} 
+   WHERE git_blob_hash IN (
+       SELECT git_blob_hash
        FROM (
-           SELECT *,
+           SELECT git_blob_hash,
                ROW_NUMBER() OVER (
                    PARTITION BY git_blob_hash
                    ORDER BY etl_updated_at DESC
@@ -23,13 +21,10 @@ def remove_duplicates_by_hash(table_name: str) -> dict:
    spark = SparkSession.builder.getOrCreate()
    initial_count = spark.table(table_name).count()
    
-   # Execute deletion
    spark.sql(delete_query)
    
    final_count = spark.table(table_name).count()
-   deleted_count = initial_count - final_count
-   
    return {
        "total_records": initial_count,
-       "deleted_records": deleted_count
+       "deleted_records": initial_count - final_count
    }
