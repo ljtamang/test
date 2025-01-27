@@ -1,54 +1,34 @@
-
-
-# Check duplicates
-dupes = spark.table("vfs_raw.file_metadata") \
-    .groupBy("git_blob_hash") \
-    .agg(F.count("*").alias("count")) \
-    .filter("count > 1")
-dupes.show()
-
-
 def deduplicate_delta_table(
    table_name: str,
    dedup_columns: list[str]
 ) -> tuple[int, int]:
    """
-   Deduplicates Delta table by keeping record with latest etl_updated_at.
+   Deduplicates Delta table keeping record with latest etl_updated_at.
 
    Args:
-       table_name: Name of delta table including schema
-       dedup_columns: List of column names to deduplicate on 
+       table_name: Name of delta table including schema 
+       dedup_columns: List of column names to deduplicate on
 
    Returns:
        tuple[int, int]: (initial_record_count, deleted_record_count)
    """
    initial_count = spark.table(table_name).count()
    
-   # First verify if duplicates exist
-   dupes_df = spark.table(table_name) \
-       .groupBy(dedup_columns) \
-       .agg(F.count("*").alias("count")) \
-       .filter("count > 1")
-   
-   if dupes_df.count() == 0:
-       return (initial_count, 0)
-       
-   window_spec = Window.partitionBy(dedup_columns) \
-                      .orderBy(F.col("etl_updated_at").desc())
-   
-   latest_records = spark.table(table_name) \
-       .withColumn("row_num", F.row_number().over(window_spec)) \
-       .filter("row_num = 1") \
-       .drop("row_num")
-   
-   latest_records.createOrReplaceTempView("latest_records")
-   
+   # Create CTE with row numbers
    spark.sql(f"""
-   DELETE FROM {table_name} t 
+   WITH ranked_records AS (
+       SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY {','.join(dedup_columns)}
+               ORDER BY etl_updated_at DESC
+           ) as rn
+       FROM {table_name}
+   )
+   DELETE FROM {table_name} t
    WHERE EXISTS (
-       SELECT 1 FROM latest_records l
-       WHERE {' AND '.join([f't.{col} = l.{col}' for col in dedup_columns])}
-       AND t.etl_updated_at < l.etl_updated_at
+       SELECT 1 FROM ranked_records r
+       WHERE {' AND '.join([f't.{col} = r.{col}' for col in dedup_columns])}
+       AND r.rn > 1
    )
    """)
    
