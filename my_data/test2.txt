@@ -1,45 +1,31 @@
-from pyspark.sql import SparkSession
-from typing import Dict
-
 def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
-   """
-   Removes duplicate records from a Delta table based on git_blob_hash, keeping one record with latest etl_updated_at.
-   For records with identical etl_updated_at, keeps one record randomly.
-   """
-   spark = SparkSession.builder.getOrCreate()
-   
-   # Get initial count
-   initial_count = spark.table(table_name).count()
-   
-   # Create view with deterministic row numbers 
-   spark.sql(f"""
-       CREATE OR REPLACE TEMPORARY VIEW temp_ranked AS
-       SELECT *,
-           ROW_NUMBER() OVER (
-               PARTITION BY git_blob_hash 
-               ORDER BY etl_updated_at DESC
-           ) as rn
-       FROM {table_name}
-   """)
-   
-   # Delete duplicates
-   spark.sql(f"""
-       DELETE FROM {table_name}
-       WHERE git_blob_hash IN (
-           SELECT DISTINCT git_blob_hash 
-           FROM temp_ranked 
-           WHERE rn > 1
-       )
-       AND git_blob_hash NOT IN (
-           SELECT DISTINCT git_blob_hash
-           FROM temp_ranked
-           WHERE rn = 1
-       )
-   """)
-   
-   final_count = spark.table(table_name).count()
-   
-   return {
-       "total_records": initial_count,
-       "deleted_records": initial_count - final_count
-   }
+    spark = SparkSession.builder.getOrCreate()
+    
+    initial_count = spark.table(table_name).count()
+    
+    # Use monotonically_increasing_id() to break ties
+    spark.sql(f"""
+        CREATE OR REPLACE TEMPORARY VIEW temp_ranked AS
+        SELECT *,
+            ROW_NUMBER() OVER (
+                PARTITION BY git_blob_hash 
+                ORDER BY etl_updated_at DESC, monotonically_increasing_id()
+            ) as rn
+        FROM {table_name}
+    """)
+    
+    spark.sql(f"""
+        DELETE FROM {table_name}
+        WHERE git_blob_hash IN (
+            SELECT git_blob_hash 
+            FROM temp_ranked 
+            WHERE rn > 1
+        )
+    """)
+    
+    final_count = spark.table(table_name).count()
+    
+    return {
+        "total_records": initial_count,
+        "deleted_records": initial_count - final_count
+    }
