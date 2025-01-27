@@ -1,28 +1,44 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.window import Window
+from pyspark.sql.functions import row_number, col
+
 def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
+    spark = SparkSession.builder.getOrCreate()
+    
+    # Read the table into a DataFrame
+    df = spark.table(table_name)
+    
+    # Define a window specification
+    window_spec = Window.partitionBy("git_blob_hash").orderBy(col("etl_updated_at").desc())
+    
+    # Add a row number column to each row within the window
+    df_with_row_num = df.withColumn("row_num", row_number().over(window_spec))
+    
+    # Create a temporary view for the DataFrame with row numbers
+    temp_view_name = f"{table_name}_with_row_num"
+    df_with_row_num.createOrReplaceTempView(temp_view_name)
+    
+    # Delete rows where row_num is greater than 1 (i.e., duplicates)
     delete_query = f"""
-    DELETE FROM {table_name} 
-    WHERE git_blob_hash IN (
-        SELECT git_blob_hash
-        FROM {table_name}
-        GROUP BY git_blob_hash
-        HAVING COUNT(*) > 1
-    )
-    AND NOT EXISTS (
-        SELECT 1
-        FROM {table_name} t2
-        WHERE t2.git_blob_hash = {table_name}.git_blob_hash
-        AND t2.etl_updated_at = (
-            SELECT MAX(etl_updated_at)
-            FROM {table_name} t3
-            WHERE t3.git_blob_hash = {table_name}.git_blob_hash
-        )
+    DELETE FROM {table_name}
+    WHERE (git_blob_hash, etl_updated_at) IN (
+        SELECT git_blob_hash, etl_updated_at
+        FROM {temp_view_name}
+        WHERE row_num > 1
     )
     """
     
-    spark = SparkSession.builder.getOrCreate()
-    initial_count = spark.table(table_name).count()
+    # Get the initial count of records
+    initial_count = df.count()
+    
+    # Execute the delete query
     spark.sql(delete_query)
+    
+    # Get the final count of records
     final_count = spark.table(table_name).count()
+    
+    # Drop the temporary view
+    spark.catalog.dropTempView(temp_view_name)
     
     return {
         "total_records": initial_count,
