@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 from delta.tables import DeltaTable
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
+from pyspark.sql.functions import to_timestamp
 import datetime
 import pytz
 
@@ -22,10 +23,16 @@ def update_file_metadata(upload_results):
         StructField("blob_path", StringType(), True),
         StructField("blob_url", StringType(), True),
         StructField("error", StringType(), True),
-        StructField("upload_timestamp", TimestampType(), True)
+        StructField("upload_timestamp", TimestampType(), True)  # Expects a TimestampType
     ])
 
-    # Convert the upload results to a DataFrame with the defined schema
+    # Convert the upload_results to a DataFrame with the defined schema
+    # Parse the upload_timestamp field from string to TimestampType
+    for result in upload_results:
+        result["upload_timestamp"] = datetime.datetime.strptime(
+            result["upload_timestamp"], "%Y-%m-%dT%H:%M:%S.%f%z"
+        )
+
     upload_df = spark.createDataFrame(upload_results, schema=schema)
 
     # Load the existing Delta table using the database and table name
@@ -64,7 +71,7 @@ upload_results = [
         "blob_path": "path/of/blob",
         "blob_url": "url of blob",
         "error": None,
-        "upload_timestamp": datetime.datetime.strptime("2025-01-27T07:38:37.252232+00:00", "%Y-%m-%dT%H:%M:%S.%f%z")
+        "upload_timestamp": "2025-01-27T08:20:33.914523+00:00"  # This is a string
     },
     {
         "file_path": "path/of/file",
@@ -73,7 +80,7 @@ upload_results = [
         "blob_path": "path/of/blob",
         "blob_url": "url of blob",
         "error": None,
-        "upload_timestamp": datetime.datetime.strptime("2025-01-27T07:38:37.252232+00:00", "%Y-%m-%dT%H:%M:%S.%f%z")
+        "upload_timestamp": "2025-01-27T08:20:33.914523+00:00"  # This is a string
     }
 ]
 
