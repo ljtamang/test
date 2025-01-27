@@ -1,16 +1,32 @@
-INSERT INTO vfs_raw.file_metadata 
-SELECT 
- file_name,
- file_relative_path,
- file_extension,
- category,
- git_last_commit_date,
- git_blob_hash,
- upload_status,
- upload_on,
- blob_url,
- error_message,
- current_timestamp() as etl_created_at,
- current_timestamp() as etl_updated_at
-FROM vfs_raw.file_metadata
-LIMIT 1;
+def remove_duplicates_by_hash(table_name: str) -> dict:
+   """
+   Identifies duplicate records based on git_blob_hash and returns statistics.
+   """
+   query = f"""
+   WITH CTE AS (
+       SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY git_blob_hash
+               ORDER BY etl_updated_at DESC
+           ) AS row_num
+       FROM {table_name}
+   )
+   SELECT 
+       git_blob_hash,
+       COUNT(*) as records_to_delete
+   FROM CTE 
+   WHERE row_num > 1
+   GROUP BY git_blob_hash
+   """
+   
+   spark = SparkSession.builder.getOrCreate()
+   duplicate_df = spark.sql(query)
+   
+   duplicate_hashes = [row.git_blob_hash for row in duplicate_df.collect()]
+   total_duplicates = sum(row.records_to_delete for row in duplicate_df.collect())
+   
+   return {
+       "total_records": spark.table(table_name).count(),
+       "duplicate_hashes": duplicate_hashes,
+       "total_duplicates": total_duplicates
+   }
