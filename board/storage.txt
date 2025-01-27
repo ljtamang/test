@@ -1,10 +1,20 @@
-query = "SELECT file_relative_path FROM vfs_raw.file_metadata;"
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import concat, lit
 
-# Execute the query and get the results in a DataFrame
-df = execute_query(query)
+# Initialize Spark session (if not already initialized)
+spark = SparkSession.builder.appName("FilePaths").getOrCreate()
 
-# Augment the relative paths with the root path
-df['file_path'] = root_path + df['file_relative_path']
+# Define the root path
+root_path = "/path/to/root/"
 
-# Convert the file paths to a list
-file_paths_list = df['file_path'].tolist()
+# Read the table into a DataFrame
+df = spark.table("vfs_raw.file_metadata")
+
+# Augment the file_relative_path with the root_path to create full file paths
+df = df.withColumn("file_path", concat(lit(root_path), df["file_relative_path"]))
+
+# Select the file_path column and convert it to a list
+file_paths_list = df.select("file_path").rdd.flatMap(lambda x: x).collect()
+
+# Display the list of full file paths
+print(file_paths_list)
