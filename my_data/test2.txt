@@ -1,35 +1,45 @@
- from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession
+from typing import Dict
 
-def deduplicate_file_metadata() -> dict:
-    spark = SparkSession.builder.getOrCreate()
-    
-    # Create temp view with row numbers for each git_blob_hash
-    spark.sql("""
-        CREATE OR REPLACE TEMPORARY VIEW temp_ranked AS
-        SELECT *,
-            ROW_NUMBER() OVER (
-                PARTITION BY git_blob_hash 
-                ORDER BY etl_updated_at DESC, rand()
-            ) as rn
-        FROM vfs_raw.file_metadata
-    """)
-    
-    # Get initial count
-    initial_count = spark.table("vfs_raw.file_metadata").count()
-    
-    # Delete all rows except the ones with rn = 1
-    spark.sql("""
-        DELETE FROM vfs_raw.file_metadata 
-        WHERE (git_blob_hash) IN (
-            SELECT git_blob_hash 
-            FROM temp_ranked 
-            WHERE rn > 1
-        )
-    """)
-    
-    final_count = spark.table("vfs_raw.file_metadata").count()
-    
-    return {
-        "total_records": initial_count,
-        "deleted_records": initial_count - final_count
-    }
+def remove_duplicates_by_hash(table_name: str) -> Dict[str, int]:
+   """
+   Removes duplicate records from a Delta table based on git_blob_hash, keeping one record with latest etl_updated_at.
+   For records with identical etl_updated_at, keeps one record randomly.
+   
+   Args:
+       table_name (str): Fully qualified name of the Delta table (e.g. "database.table")
+       
+   Returns:
+       Dict[str, int]: Contains:
+           - total_records (int): Initial record count
+           - deleted_records (int): Number of records deleted
+   """
+   spark = SparkSession.builder.getOrCreate()
+   
+   spark.sql(f"""
+       CREATE OR REPLACE TEMPORARY VIEW temp_ranked AS
+       SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY git_blob_hash 
+               ORDER BY etl_updated_at DESC, rand()
+           ) as rn
+       FROM {table_name}
+   """)
+   
+   initial_count = spark.table(table_name).count()
+   
+   spark.sql(f"""
+       DELETE FROM {table_name}
+       WHERE (git_blob_hash) IN (
+           SELECT git_blob_hash 
+           FROM temp_ranked 
+           WHERE rn > 1
+       )
+   """)
+   
+   final_count = spark.table(table_name).count()
+   
+   return {
+       "total_records": initial_count,
+       "deleted_records": initial_count - final_count
+   }
