@@ -1,49 +1,114 @@
-from pyspark.sql.functions import when, col, lit
-from datetime import datetime
+Module 1: Introduction to Azure Databricks and ETL
+Objectives:
 
-def update_file_metadata(spark, upload_results):
-    """
-    Update file_metadata table based on upload results
-    
-    Args:
-        spark: SparkSession object
-        upload_results: List of dictionaries containing upload results
-    """
-    # Convert upload results to DataFrame
-    results_df = spark.createDataFrame(upload_results)
-    
-    # Get current timestamp
-    current_time = datetime.now()
-    
-    # Update metadata table
-    metadata_table = spark.table("vfs_raw.file_metadata")
-    
-    # Create conditions for updates
-    update_conditions = when(
-        (metadata_table.file_relative_path == results_df.file_relative_path) &
-        (results_df.upload_status == "success"),
-        {
-            "upload_status": lit("uploaded"),
-            "upload_on": col("upload_timestamp"),
-            "blob_url": results_df.blob_url,
-            "etl_updated_at": lit(current_time)
-        }
-    ).when(
-        (metadata_table.file_relative_path == results_df.file_relative_path) &
-        (results_df.upload_status == "fail"),
-        {
-            "upload_status": lit("needs_reupload"),
-            "error_message": results_df.error,
-            "etl_updated_at": lit(current_time)
-        }
-    ).otherwise(
-        {
-            "etl_updated_at": lit(current_time)
-        }
-    )
-    
-    # Perform merge operation
-    metadata_table.alias("target").merge(
-        results_df.alias("source"),
-        "target.file_relative_path = source.file_relative_path"
-    ).whenMatchedUpdate(set=update_conditions).execute()
+Introduction to ETL:
+Understand the Extract, Transform, Load process.
+Identify a dataset to work with (e.g., Outpatient Table).
+
+Required Libraries:
+Use libraries like pyspark, pandas, or others needed for the ETL process.
+
+Module 2: Data Extraction
+Objectives:
+Learn to extract data from different sources (e.g., Blob Storage, SQL databases, REST APIs).
+Tasks:
+Connect to a Data Source:
+Read data from Azure Blob Storage or Azure Data Lake using the Databricks spark.read function.
+Example
+Edit
+data = spark.read.format("csv").option("header", "true").load("path_to_storage")
+data.show()
+Work with Other Sources:
+Extract data from Azure SQL Database using JDBC.
+Example
+Edit
+jdbc_url = "jdbc:sqlserver://<server>:<port>;database=<database>"
+connection_properties = {
+    "user": "<username>",
+    "password": "<password>"
+}
+df = spark.read.jdbc(url=jdbc_url, table="table_name", properties=connection_properties)
+df.show()
+
+Module 3: Data Transformation
+Objectives:
+Perform transformations like filtering, aggregations, and joins using PySpark.
+Tasks:
+Clean the Data:
+Handle nulls, duplicates, and invalid values.
+Example
+clean_data = data.dropna().dropDuplicates()
+clean_data.show()
+
+Transform the Data:
+Perform column operations (e.g., create new columns, modify existing ones).
+Example
+from pyspark.sql.functions import col
+transformed_data = clean_data.withColumn("new_col", col("existing_col") * 10)
+
+Join Multiple Datasets:
+Use Spark to join two datasets.
+Example
+final_data = transformed_data.join(another_df, "common_column")
+final_data.show()
+
+Module 4: Data Loading
+Objectives:
+Load the transformed data into storage or databases.
+Tasks:
+Write to Azure Blob Storage:
+Save the transformed data as Parquet, CSV, or JSON.
+Example
+final_data.write.format("parquet").mode("overwrite").save("output_path")
+Write to Azure SQL Database:
+
+Use JDBC to write data back to a relational database.
+Example
+final_data.write.jdbc(url=jdbc_url, table="output_table", mode="overwrite", properties=connection_properties)
+
+Module 5: Orchestration and Scheduling
+Objectives:
+Automate and schedule the ETL pipeline using Databricks Jobs.
+Create a Notebook for the ETL Pipeline:
+Write the full pipeline (Extraction, Transformation, Loading) in a Databricks notebook.
+Schedule a Job:
+Create a Databricks Job to run the notebook periodically.
+Configure retries and failure notifications.
+
+Module 6: Monitoring and Debugging
+Objectives:
+Learn how to monitor ETL jobs and handle errors.
+Enable Logging:
+Use logging in Python to track the pipeline’s progress.
+Monitor Jobs:
+Use the Databricks Jobs UI to monitor execution history and performance metrics.
+Debug Common Issues:
+Handle common errors like connection issues, data type mismatches, etc.
+
+Module 7: Optimize the Pipeline
+Objectives:
+Optimize performance and scalability.
+Tasks:
+Partition the Data:
+Use partitioning to optimize storage and querying.
+Example
+final_data.write.partitionBy("column").parquet("output_path")
+Leverage Caching:
+Use persist() or cache() for repeated transformations.
+Optimize Spark Configurations:
+
+Tune settings like spark.executor.memory and spark.sql.shuffle.partitions.
+
+Capstone Project
+Objective:
+Build a complete ETL pipeline end-to-end using the skills learned.
+Project Steps:
+Extract Data:
+Use multiple sources (e.g., CSV from Blob Storage and a table from Azure SQL).
+Transform Data:
+Clean and enrich data.
+Perform joins and aggregations.
+Load Data:
+Write the final dataset back to Azure Data Lake or an Azure SQL table.
+Schedule and Monitor:
+Schedule the pipeline using Databricks Jobs and monitor its execution.
