@@ -1,6 +1,23 @@
-# Copy folder from mount point to a temporary local path
-dbutils.fs.cp("/mnt/your-mount-point/folder-name", "dbfs:/tmp/folder-name", recursive=True)
-print("Folder copied to temporary path in DBFS.")
+# Define source and destination paths
+source_path = "/mnt/your-mount-point/folder-name"
+destination_path = "dbfs:/tmp/folder-name"
+
+# List all files in the source path
+files = dbutils.fs.ls(source_path)
+
+# Iterate through files and copy them one by one
+for file in files:
+    if file.isDir():
+        # Handle subdirectories recursively (if needed)
+        print(f"Skipping subdirectory: {file.path}")
+    else:
+        # Copy individual files
+        destination_file_path = destination_path + "/" + file.name
+        dbutils.fs.cp(file.path, destination_file_path)
+        print(f"Copied {file.path} to {destination_file_path}")
+
+print("All files copied.")
+
 
 
 import shutil
