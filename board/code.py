@@ -37,11 +37,11 @@ with open(csv_file_path, mode='r') as csv_file:
         # Generate a unique ID
         unique_id = str(uuid.uuid4().hex)[:8]  # Using the first 8 characters of a UUID
         
-        # Get the file name from the relative path
-        file_name = os.path.basename(file_relative_path)
+        # Get the file name and extension from the relative path
+        file_name, file_extension = os.path.splitext(os.path.basename(file_relative_path))
         
-        # Construct the new file name with the unique ID
-        new_file_name = f"{unique_id}_{file_name}"
+        # Construct the new file name with the unique ID before the extension
+        new_file_name = f"{file_name}_{unique_id}{file_extension}"
         
         # Construct the full destination path
         full_destination_path = os.path.join(output_folder, new_file_name)
