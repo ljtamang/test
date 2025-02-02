@@ -1,10 +1,9 @@
 import pandas as pd
-from keybert import KeyBERT
+from rake_nltk import Rake
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import nltk
 import re
-from sentence_transformers import SentenceTransformer
 
 # Download required NLTK data
 nltk.download('punkt', quiet=True)
@@ -14,8 +13,8 @@ def clean_text(text):
     """Clean and preprocess text data."""
     if isinstance(text, str):
         text = text.lower()
-        text = re.sub(r'[^a-zA-Z\s]', '', text)
-        text = ' '.join(text.split())
+        text = re.sub(r'[^a-zA-Z\s]', '', text)  # Remove non-alphabetic characters
+        text = ' '.join(text.split())  # Remove extra spaces
         return text
     return ''
 
@@ -24,40 +23,36 @@ def prepare_data(df):
     Prepare and clean the dataframe.
     Filter for trust scores 1-2 AND negative sentiment only.
     """
+    # Filter for low trust (1-2) AND negative sentiment
     filtered_df = df[
         (df['trust'].isin([1, 2])) &
         (df['sentiment'] == 'Negative')
     ].copy()
 
+    # Clean the comments
     filtered_df['cleaned_comment'] = filtered_df['free_text_comment'].apply(clean_text)
+
+    # Remove empty comments
     filtered_df = filtered_df[filtered_df['cleaned_comment'].str.len() > 0]
 
     return filtered_df
 
-def extract_keyphrases(texts, top_n=50):
-    """Extract keyphrases using KeyBERT with specific model."""
-    try:
-        # Initialize specific sentence transformer model
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        kw_model = KeyBERT(model=model)
+def extract_keyphrases_rake(texts, top_n=50):
+    """Extract keyphrases using RAKE."""
+    # Initialize RAKE
+    rake = Rake()
 
-        # Combine all texts into one
-        combined_text = ' '.join(texts)
+    # Combine all texts into one
+    combined_text = ' '.join(texts)
 
-        # Extract keyphrases
-        keyphrases = kw_model.extract_keywords(
-            combined_text,
-            keyphrase_ngram_range=(2, 3),
-            stop_words='english',
-            use_maxsum=True,
-            nr_candidates=20,
-            top_n=top_n
-        )
+    # Extract keyphrases
+    rake.extract_keywords_from_text(combined_text)
 
-        return keyphrases
-    except Exception as e:
-        print(f"Error in keyphrase extraction: {str(e)}")
-        return []
+    # Get ranked phrases with scores
+    ranked_phrases = rake.get_ranked_phrases_with_scores()
+
+    # Sort and return the top N phrases
+    return ranked_phrases[:top_n]
 
 def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
     """Generate a WordCloud from keyphrases."""
@@ -66,7 +61,7 @@ def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
         return
 
     # Convert keyphrases to a dictionary with scores
-    phrase_dict = {phrase: score for phrase, score in keyphrases}
+    phrase_dict = {phrase: score for score, phrase in keyphrases}
 
     # Generate the WordCloud
     wordcloud = WordCloud(
@@ -98,13 +93,13 @@ def analyze_negative_comments(df_comments):
         print(f"\nTotal negative comments with low trust: {len(filtered_df)}")
         print(f"\nTrust Score Distribution:\n{filtered_df['trust'].value_counts()}")
 
-        # 2. Extract keyphrases
+        # 2. Extract keyphrases using RAKE
         print("\nStep 2: Extracting common negative keyphrases...")
-        keyphrases = extract_keyphrases(filtered_df['cleaned_comment'].tolist())
+        keyphrases = extract_keyphrases_rake(filtered_df['cleaned_comment'].tolist())
 
         if keyphrases:
             print("\nTop 10 negative keyphrases:")
-            for phrase, score in keyphrases[:10]:
+            for score, phrase in keyphrases[:10]:
                 print(f"{phrase}: {score:.4f}")
 
             # 3. Create WordCloud visualization
@@ -122,7 +117,21 @@ def analyze_negative_comments(df_comments):
 # Main execution
 def main():
     try:
-        # Run the analysis with your df_comments
+        # Example dataframe (replace this with your actual dataframe)
+        data = {
+            'trust': [1, 2, 3, 1, 2],
+            'free_text_comment': [
+                "The product quality is terrible and the service is bad.",
+                "I am very disappointed with the delayed delivery.",
+                "The experience was okay, but not great.",
+                "Horrible customer service and rude staff.",
+                "The product broke after one use. Very poor quality."
+            ],
+            'sentiment': ['Negative', 'Negative', 'Neutral', 'Negative', 'Negative']
+        }
+        df_comments = pd.DataFrame(data)
+
+        # Run the analysis
         filtered_df, keyphrases = analyze_negative_comments(df_comments)
 
         if filtered_df is not None:
