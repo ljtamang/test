@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
 from keybert import KeyBERT
+from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import seaborn as sns
 import nltk
 from nltk.corpus import stopwords
 import re
@@ -40,7 +40,7 @@ def prepare_data(df):
 
     return filtered_df
 
-def extract_keyphrases(texts, top_n=20):
+def extract_keyphrases(texts, top_n=50):
     """Extract keyphrases using KeyBERT."""
     # Initialize KeyBERT
     kw_model = KeyBERT()
@@ -60,70 +60,24 @@ def extract_keyphrases(texts, top_n=20):
 
     return keyphrases
 
-def plot_keyphrases(keyphrases, n=15, title="Top Negative Keyphrases in Low Trust Comments"):
-    """Plot top keyphrases as a horizontal bar chart."""
-    plt.figure(figsize=(12, 6))
+def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
+    """Generate a WordCloud from keyphrases."""
+    # Convert keyphrases to a dictionary with scores
+    phrase_dict = {phrase: score for phrase, score in keyphrases}
 
-    phrases = [phrase for phrase, score in keyphrases[:n]]
-    scores = [score for phrase, score in keyphrases[:n]]
+    # Generate the WordCloud
+    wordcloud = WordCloud(
+        background_color='white',
+        colormap='Reds',
+        width=800,
+        height=400
+    ).generate_from_frequencies(phrase_dict)
 
-    plt.barh(phrases, scores, color='salmon')
-    plt.xlabel("Relevance Score")
-    plt.title(title)
-    plt.gca().invert_yaxis()
-    plt.tight_layout()
-    plt.show()
-
-def plot_keyphrase_heatmap(keyphrases, n=20):
-    """Create a heatmap visualization of keyphrase relevance."""
-    plt.figure(figsize=(12, 8))
-
-    # Prepare data for heatmap
-    phrases = [phrase for phrase, _ in keyphrases[:n]]
-    scores = [score for _, score in keyphrases[:n]]
-
-    # Reshape data for heatmap (4x5 matrix)
-    matrix = np.array(scores[:20]).reshape(4, 5)
-
-    # Plot heatmap
-    sns.heatmap(matrix,
-                annot=True,
-                fmt='.3f',
-                cmap='Reds',
-                xticklabels=range(1, 6),
-                yticklabels=range(1, 5))
-
-    plt.title("Keyphrase Relevance Heatmap")
-    plt.tight_layout()
-    plt.show()
-
-def analyze_by_trust_score(df, keyphrases):
-    """Analyze keyphrase occurrence by trust score (1 vs 2)."""
-    def contains_phrase(text, phrase):
-        return 1 if phrase in text else 0
-
-    top_phrases = [phrase for phrase, _ in keyphrases[:10]]
-
-    analysis_df = pd.DataFrame()
-    for phrase in top_phrases:
-        df[f'contains_{phrase}'] = df['cleaned_comment'].apply(
-            lambda x: contains_phrase(x, phrase)
-        )
-        trust_counts = df.groupby('trust')[f'contains_{phrase}'].sum()
-        analysis_df[phrase] = trust_counts
-
-    return analysis_df
-
-def plot_trust_analysis(trust_analysis):
-    """Plot phrase distribution across trust scores."""
-    plt.figure(figsize=(12, 6))
-    trust_analysis.plot(kind='bar')
-    plt.title("Negative Keyphrase Distribution by Trust Score")
-    plt.xlabel("Trust Score")
-    plt.ylabel("Frequency")
-    plt.xticks(rotation=0)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.tight_layout()
+    # Plot the WordCloud
+    plt.figure(figsize=(10, 6))
+    plt.imshow(wordcloud, interpolation='bilinear')
+    plt.axis('off')
+    plt.title(title, fontsize=16)
     plt.show()
 
 def analyze_negative_comments(df_comments):
@@ -143,27 +97,21 @@ def analyze_negative_comments(df_comments):
         for phrase, score in keyphrases[:10]:
             print(f"{phrase}: {score:.4f}")
 
-        # 3. Create visualizations
-        print("\nStep 3: Creating visualizations...")
-        plot_keyphrases(keyphrases)
-        plot_keyphrase_heatmap(keyphrases)
+        # 3. Create WordCloud visualization
+        print("\nStep 3: Creating WordCloud visualization...")
+        generate_wordcloud(keyphrases)
 
-        # 4. Analyze by trust score
-        print("\nStep 4: Analyzing keyphrases by trust score...")
-        trust_analysis = analyze_by_trust_score(filtered_df, keyphrases)
-        plot_trust_analysis(trust_analysis)
-
-        return filtered_df, keyphrases, trust_analysis
+        return filtered_df, keyphrases
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
-        return None, None, None
+        return None, None
 
 # Main execution
 def main():
     try:
         # Run the analysis
-        filtered_df, keyphrases, trust_analysis = analyze_negative_comments(df_comments)
+        filtered_df, keyphrases = analyze_negative_comments(df_comments)
 
         if filtered_df is not None:
             print("\nAnalysis completed successfully!")
