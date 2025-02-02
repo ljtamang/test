@@ -18,15 +18,15 @@ def clean_text(text):
         return text
     return ''
 
-def prepare_data(df):
+def prepare_data(df, sentiment, trust_scores):
     """
     Prepare and clean the dataframe.
-    Filter for trust scores 1-2 AND negative sentiment only.
+    Filter for specific trust scores and sentiment.
     """
-    # Filter for low trust (1-2) AND negative sentiment
+    # Filter for the specified trust scores and sentiment
     filtered_df = df[
-        (df['trust'].isin([1, 2])) &
-        (df['sentiment'] == 'Negative')
+        (df['trust'].isin(trust_scores)) &
+        (df['sentiment'] == sentiment)
     ].copy()
 
     # Clean the comments
@@ -66,7 +66,7 @@ def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
     # Generate the WordCloud
     wordcloud = WordCloud(
         background_color='white',
-        colormap='Reds',
+        colormap='Greens' if 'Positive' in title else 'Reds',  # Use different colors for positive/negative
         width=1200,
         height=800,
         prefer_horizontal=0.7,
@@ -83,30 +83,30 @@ def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
     plt.tight_layout(pad=0)
     plt.show()
 
-def analyze_negative_comments(df_comments):
-    """Main analysis function for negative comments with low trust scores."""
+def analyze_comments(df_comments, sentiment, trust_scores, title_prefix):
+    """Analyze comments for a specific sentiment and trust score range."""
     try:
         # 1. Prepare and clean data
-        print("Step 1: Preparing and cleaning data...")
-        filtered_df = prepare_data(df_comments)
+        print(f"Step 1: Preparing and cleaning data for {sentiment} comments...")
+        filtered_df = prepare_data(df_comments, sentiment, trust_scores)
 
-        print(f"\nTotal negative comments with low trust: {len(filtered_df)}")
+        print(f"\nTotal {sentiment.lower()} comments with trust scores {trust_scores}: {len(filtered_df)}")
         print(f"\nTrust Score Distribution:\n{filtered_df['trust'].value_counts()}")
 
         # 2. Extract keyphrases using RAKE
-        print("\nStep 2: Extracting common negative keyphrases...")
+        print(f"\nStep 2: Extracting common {sentiment.lower()} keyphrases...")
         keyphrases = extract_keyphrases_rake(filtered_df['cleaned_comment'].tolist())
 
         if keyphrases:
-            print("\nTop 10 negative keyphrases:")
+            print(f"\nTop 10 {sentiment.lower()} keyphrases:")
             for score, phrase in keyphrases[:10]:
                 print(f"{phrase}: {score:.4f}")
 
             # 3. Create WordCloud visualization
-            print("\nStep 3: Creating WordCloud visualization...")
-            generate_wordcloud(keyphrases)
+            print(f"\nStep 3: Creating WordCloud visualization for {sentiment.lower()} comments...")
+            generate_wordcloud(keyphrases, title=f"{title_prefix} WordCloud of {sentiment} Comments")
         else:
-            print("No keyphrases were extracted.")
+            print(f"No keyphrases were extracted for {sentiment.lower()} comments.")
 
         return filtered_df, keyphrases
 
@@ -119,26 +119,30 @@ def main():
     try:
         # Example dataframe (replace this with your actual dataframe)
         data = {
-            'trust': [1, 2, 3, 1, 2],
+            'trust': [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
             'free_text_comment': [
                 "The product quality is terrible and the service is bad.",
                 "I am very disappointed with the delayed delivery.",
-                "The experience was okay, but not great.",
+                "The experience was amazing, and the staff was very helpful.",
+                "Great product! Excellent quality and fast delivery.",
+                "Fantastic service and very friendly staff.",
                 "Horrible customer service and rude staff.",
-                "The product broke after one use. Very poor quality."
+                "The product broke after one use. Very poor quality.",
+                "I love the design and the ease of use.",
+                "The team was very responsive and helpful.",
+                "The best experience I've had with any company!"
             ],
-            'sentiment': ['Negative', 'Negative', 'Neutral', 'Negative', 'Negative']
+            'sentiment': ['Negative', 'Negative', 'Positive', 'Positive', 'Positive', 'Negative', 'Negative', 'Positive', 'Positive', 'Positive']
         }
         df_comments = pd.DataFrame(data)
 
-        # Run the analysis
-        filtered_df, keyphrases = analyze_negative_comments(df_comments)
+        # Analyze negative comments (trust scores 1-2)
+        print("\nAnalyzing Negative Comments...")
+        analyze_comments(df_comments, sentiment='Negative', trust_scores=[1, 2], title_prefix="Negative")
 
-        if filtered_df is not None:
-            print("\nAnalysis completed successfully!")
-            print("\nKey Insights:")
-            print(f"- Most relevant negative keyphrases found in {len(filtered_df)} comments")
-            print(f"- Trust score distribution: {filtered_df['trust'].value_counts().to_dict()}")
+        # Analyze positive comments (trust scores 3 and above)
+        print("\nAnalyzing Positive Comments...")
+        analyze_comments(df_comments, sentiment='Positive', trust_scores=[3, 4, 5], title_prefix="Positive")
 
     except Exception as e:
         print(f"Error in main execution: {str(e)}")
