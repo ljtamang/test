@@ -1,2 +1,2 @@
-# Filter rows where 'trust' and 'comments' columns are not empty
-df_comments = df[(df['trust'].notna()) & (df['comments'].notna())].copy()
+   # Apply sentiment analysis and add a new column
+    df['sentiment_score'] = df[text_column].apply(lambda text: TextBlob(text).sentiment.polarity)
