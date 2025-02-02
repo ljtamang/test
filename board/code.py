@@ -1,26 +1,29 @@
-def extract_keyphrases_rake(texts, top_n=50):
-    """Extract keyphrases using RAKE and remove duplicates."""
-    # Initialize RAKE
-    rake = Rake()
+missing_percentage = df.isna().mean() * 100
+print(missing_percentage)
 
-    # Combine all texts into one
-    combined_text = ' '.join(texts)
+df_clean = df.dropna(subset=['trust'])
 
-    # Extract keyphrases
-    rake.extract_keywords_from_text(combined_text)
+df_clean.fillna(df_clean.mean(), inplace=True)  # Mean imputation
+# Or use median:
+df_clean.fillna(df_clean.median(), inplace=True)
 
-    # Get ranked phrases with scores
-    ranked_phrases = rake.get_ranked_phrases_with_scores()
 
-    # Remove duplicates by normalizing phrases (convert to lowercase)
-    unique_phrases = {}
-    for score, phrase in ranked_phrases:
-        normalized_phrase = phrase.lower()  # Normalize to lowercase
-        if normalized_phrase not in unique_phrases:
-            unique_phrases[normalized_phrase] = score
+import pandas as pd
+import numpy as np
 
-    # Sort the unique phrases by score in descending order
-    sorted_phrases = sorted(unique_phrases.items(), key=lambda x: x[1], reverse=True)
+# Example dataframe
+data = {
+    'know_what_to_expect': [5, 4, np.nan, 3, 2],
+    'communicated_what_evidience_needed': [4, np.nan, 3, 2, 1],
+    'trust': [5, 4, 3, np.nan, 1]
+}
+df = pd.DataFrame(data)
 
-    # Return the top N phrases
-    return sorted_phrases[:top_n]
+# Step 1: Drop rows where trust is missing (partial case analysis)
+df_clean = df.dropna(subset=['trust'])
+
+# Step 2: Impute missing values in predictors
+df_clean.fillna(df_clean.mean(), inplace=True)  # Replace missing values with column mean
+
+print("Cleaned Data:")
+print(df_clean)
