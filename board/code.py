@@ -1,12 +1,3 @@
-# First, uninstall existing packages to avoid conflicts
-pip uninstall keybert sentence-transformers -y
-
-# Then install in the correct order
-pip install torch
-pip install sentence-transformers
-pip install keybert==0.7.0
-
-
 import pandas as pd
 from keybert import KeyBERT
 from wordcloud import WordCloud
