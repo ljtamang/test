@@ -1,2 +1,4 @@
-   # Apply sentiment analysis and add a new column
-    df['sentiment_score'] = df[text_column].apply(lambda text: TextBlob(text).sentiment.polarity)
+# Add sentiment classification column using a lambda function
+df_comments['sentiment'] = df_comments['sentiment_score'].apply(
+    lambda score: "Positive" if score > 0 else ("Negative" if score < 0 else "Neutral")
+)
