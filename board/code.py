@@ -1,9 +1,19 @@
+# First, uninstall existing packages to avoid conflicts
+pip uninstall keybert sentence-transformers -y
+
+# Then install in the correct order
+pip install torch
+pip install sentence-transformers
+pip install keybert==0.7.0
+
+
 import pandas as pd
 from keybert import KeyBERT
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import nltk
 import re
+from sentence_transformers import SentenceTransformer
 
 # Download required NLTK data
 nltk.download('punkt', quiet=True)
@@ -13,8 +23,8 @@ def clean_text(text):
     """Clean and preprocess text data."""
     if isinstance(text, str):
         text = text.lower()
-        text = re.sub(r'[^a-zA-Z\s]', '', text)  # Remove non-alphabetic characters
-        text = ' '.join(text.split())  # Remove extra spaces
+        text = re.sub(r'[^a-zA-Z\s]', '', text)
+        text = ' '.join(text.split())
         return text
     return ''
 
@@ -23,39 +33,40 @@ def prepare_data(df):
     Prepare and clean the dataframe.
     Filter for trust scores 1-2 AND negative sentiment only.
     """
-    # Filter for low trust (1-2) AND negative sentiment
     filtered_df = df[
         (df['trust'].isin([1, 2])) &
         (df['sentiment'] == 'Negative')
     ].copy()
 
-    # Clean the comments
     filtered_df['cleaned_comment'] = filtered_df['free_text_comment'].apply(clean_text)
-
-    # Remove empty comments
     filtered_df = filtered_df[filtered_df['cleaned_comment'].str.len() > 0]
 
     return filtered_df
 
 def extract_keyphrases(texts, top_n=50):
-    """Extract keyphrases using KeyBERT."""
-    # Initialize KeyBERT
-    kw_model = KeyBERT()
+    """Extract keyphrases using KeyBERT with specific model."""
+    try:
+        # Initialize specific sentence transformer model
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        kw_model = KeyBERT(model=model)
 
-    # Combine all texts into one
-    combined_text = ' '.join(texts)
+        # Combine all texts into one
+        combined_text = ' '.join(texts)
 
-    # Extract keyphrases
-    keyphrases = kw_model.extract_keywords(
-        combined_text,
-        keyphrase_ngram_range=(2, 3),  # Extract 2-3 word phrases
-        stop_words='english',
-        use_maxsum=True,  # Use MaxSum similarity for diversity
-        nr_candidates=20,  # Number of candidates to consider
-        top_n=top_n  # Number of top phrases to return
-    )
+        # Extract keyphrases
+        keyphrases = kw_model.extract_keywords(
+            combined_text,
+            keyphrase_ngram_range=(2, 3),
+            stop_words='english',
+            use_maxsum=True,
+            nr_candidates=20,
+            top_n=top_n
+        )
 
-    return keyphrases
+        return keyphrases
+    except Exception as e:
+        print(f"Error in keyphrase extraction: {str(e)}")
+        return []
 
 def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
     """Generate a WordCloud from keyphrases."""
@@ -70,17 +81,20 @@ def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
     wordcloud = WordCloud(
         background_color='white',
         colormap='Reds',
-        width=800,
-        height=400,
-        prefer_horizontal=0.7
+        width=1200,
+        height=800,
+        prefer_horizontal=0.7,
+        max_words=50,
+        min_font_size=10,
+        max_font_size=50
     ).generate_from_frequencies(phrase_dict)
 
     # Plot the WordCloud
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(15, 8))
     plt.imshow(wordcloud, interpolation='bilinear')
     plt.axis('off')
-    plt.title(title, fontsize=16)
-    plt.tight_layout()
+    plt.title(title, fontsize=16, pad=20)
+    plt.tight_layout(pad=0)
     plt.show()
 
 def analyze_negative_comments(df_comments):
@@ -117,21 +131,7 @@ def analyze_negative_comments(df_comments):
 # Main execution
 def main():
     try:
-        # Example dataframe (replace this with your actual dataframe)
-        data = {
-            'trust': [1, 2, 3, 1, 2],
-            'free_text_comment': [
-                "The product quality is terrible and the service is bad.",
-                "I am very disappointed with the delayed delivery.",
-                "The experience was okay, but not great.",
-                "Horrible customer service and rude staff.",
-                "The product broke after one use. Very poor quality."
-            ],
-            'sentiment': ['Negative', 'Negative', 'Neutral', 'Negative', 'Negative']
-        }
-        df_comments = pd.DataFrame(data)
-
-        # Run the analysis
+        # Run the analysis with your df_comments
         filtered_df, keyphrases = analyze_negative_comments(df_comments)
 
         if filtered_df is not None:
