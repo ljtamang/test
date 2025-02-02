@@ -1,5 +1,5 @@
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+# Count sentiment categories grouped by trust score
+sentiment_counts_by_trust = df.groupby('trust')['sentiment_category'].value_counts().unstack(fill_value=0)
 
-analyzer = SentimentIntensityAnalyzer()
-
-df['sentiment'] = df['comment'].apply(lambda x: SentimentIntensityAnalyzer().polarity_scores(x)['compound'])
+# Display the result
+print(sentiment_counts_by_trust)
