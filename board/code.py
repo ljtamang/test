@@ -1,20 +1,16 @@
-import matplotlib.pyplot as plt
+# Define custom colors
+custom_colors = {'negative': '#FF4C4C', 'positive': '#4CAF50', 'neutral': '#B0B0B0'}
 
-# Plot stacked bar chart
-sentiment_counts_by_trust.plot(kind='bar', stacked=True, figsize=(10, 6), colormap='viridis')
+# Plot grouped bar chart with custom colors
+ax = sentiment_counts_by_trust.plot(kind='bar', figsize=(10, 6), color=[custom_colors[col] for col in sentiment_counts_by_trust.columns])
 
+# Customize the chart
 plt.title("Sentiment Distribution by Trust Score")
 plt.xlabel("Trust Score")
 plt.ylabel("Count of Sentiments")
 plt.legend(title="Sentiment Category")
 plt.xticks(rotation=45)
-plt.show()
+plt.grid(axis='y', linestyle='--', alpha=0.7)
 
-sentiment_counts_by_trust.plot(kind='bar', figsize=(10, 6), colormap='Set2')
-
-plt.title("Sentiment Distribution by Trust Score")
-plt.xlabel("Trust Score")
-plt.ylabel("Count of Sentiments")
-plt.legend(title="Sentiment Category")
-plt.xticks(rotation=45)
+# Show the plot
 plt.show()
