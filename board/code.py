@@ -4,6 +4,7 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import nltk
 import re
+import random
 
 # Download required NLTK data
 nltk.download('punkt', quiet=True)
@@ -54,8 +55,16 @@ def extract_keyphrases_rake(texts, top_n=50):
     # Sort and return the top N phrases
     return ranked_phrases[:top_n]
 
+def custom_color_func(word, font_size, position, orientation, random_state=None, **kwargs):
+    """
+    Custom color function to make more prominent words brighter.
+    Words with higher scores will have brighter colors.
+    """
+    brightness = int(255 * (font_size / 50))  # Scale brightness based on font size
+    return f"rgb({brightness}, {brightness // 2}, {brightness // 3})"  # Brighter colors for larger words
+
 def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
-    """Generate a WordCloud from keyphrases."""
+    """Generate a WordCloud from keyphrases with custom colors."""
     if not keyphrases:
         print("No keyphrases to visualize")
         return
@@ -66,13 +75,13 @@ def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
     # Generate the WordCloud
     wordcloud = WordCloud(
         background_color='white',
-        colormap='Greens' if 'Positive' in title else 'Reds',  # Use different colors for positive/negative
         width=1200,
         height=800,
         prefer_horizontal=0.7,
         max_words=50,
         min_font_size=10,
-        max_font_size=50
+        max_font_size=50,
+        color_func=custom_color_func  # Use custom color function
     ).generate_from_frequencies(phrase_dict)
 
     # Plot the WordCloud
