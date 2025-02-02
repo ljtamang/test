@@ -1,23 +1,20 @@
 import pandas as pd
-import numpy as np
 from keybert import KeyBERT
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import nltk
-from nltk.corpus import stopwords
 import re
 
 # Download required NLTK data
 nltk.download('punkt', quiet=True)
 nltk.download('stopwords', quiet=True)
-nltk.download('wordnet', quiet=True)
 
 def clean_text(text):
     """Clean and preprocess text data."""
     if isinstance(text, str):
         text = text.lower()
-        text = re.sub(r'[^a-zA-Z\s]', '', text)
-        text = ' '.join(text.split())
+        text = re.sub(r'[^a-zA-Z\s]', '', text)  # Remove non-alphabetic characters
+        text = ' '.join(text.split())  # Remove extra spaces
         return text
     return ''
 
@@ -53,15 +50,19 @@ def extract_keyphrases(texts, top_n=50):
         combined_text,
         keyphrase_ngram_range=(2, 3),  # Extract 2-3 word phrases
         stop_words='english',
-        use_maxsum=True,
-        nr_candidates=20,
-        top_n=top_n
+        use_maxsum=True,  # Use MaxSum similarity for diversity
+        nr_candidates=20,  # Number of candidates to consider
+        top_n=top_n  # Number of top phrases to return
     )
 
     return keyphrases
 
 def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
     """Generate a WordCloud from keyphrases."""
+    if not keyphrases:
+        print("No keyphrases to visualize")
+        return
+
     # Convert keyphrases to a dictionary with scores
     phrase_dict = {phrase: score for phrase, score in keyphrases}
 
@@ -70,7 +71,8 @@ def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
         background_color='white',
         colormap='Reds',
         width=800,
-        height=400
+        height=400,
+        prefer_horizontal=0.7
     ).generate_from_frequencies(phrase_dict)
 
     # Plot the WordCloud
@@ -78,6 +80,7 @@ def generate_wordcloud(keyphrases, title="WordCloud of Key Phrases"):
     plt.imshow(wordcloud, interpolation='bilinear')
     plt.axis('off')
     plt.title(title, fontsize=16)
+    plt.tight_layout()
     plt.show()
 
 def analyze_negative_comments(df_comments):
@@ -93,13 +96,17 @@ def analyze_negative_comments(df_comments):
         # 2. Extract keyphrases
         print("\nStep 2: Extracting common negative keyphrases...")
         keyphrases = extract_keyphrases(filtered_df['cleaned_comment'].tolist())
-        print("\nTop 10 negative keyphrases:")
-        for phrase, score in keyphrases[:10]:
-            print(f"{phrase}: {score:.4f}")
 
-        # 3. Create WordCloud visualization
-        print("\nStep 3: Creating WordCloud visualization...")
-        generate_wordcloud(keyphrases)
+        if keyphrases:
+            print("\nTop 10 negative keyphrases:")
+            for phrase, score in keyphrases[:10]:
+                print(f"{phrase}: {score:.4f}")
+
+            # 3. Create WordCloud visualization
+            print("\nStep 3: Creating WordCloud visualization...")
+            generate_wordcloud(keyphrases)
+        else:
+            print("No keyphrases were extracted.")
 
         return filtered_df, keyphrases
 
@@ -110,6 +117,20 @@ def analyze_negative_comments(df_comments):
 # Main execution
 def main():
     try:
+        # Example dataframe (replace this with your actual dataframe)
+        data = {
+            'trust': [1, 2, 3, 1, 2],
+            'free_text_comment': [
+                "The product quality is terrible and the service is bad.",
+                "I am very disappointed with the delayed delivery.",
+                "The experience was okay, but not great.",
+                "Horrible customer service and rude staff.",
+                "The product broke after one use. Very poor quality."
+            ],
+            'sentiment': ['Negative', 'Negative', 'Neutral', 'Negative', 'Negative']
+        }
+        df_comments = pd.DataFrame(data)
+
         # Run the analysis
         filtered_df, keyphrases = analyze_negative_comments(df_comments)
 
