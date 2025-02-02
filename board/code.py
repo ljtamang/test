@@ -1,16 +1,14 @@
-# Define custom colors
-custom_colors = {'negative': '#FF4C4C', 'positive': '#4CAF50', 'neutral': '#B0B0B0'}
+# **Observation: Sentiment Trends by Trust Score**
 
-# Plot grouped bar chart with custom colors
-ax = sentiment_counts_by_trust.plot(kind='bar', figsize=(10, 6), color=[custom_colors[col] for col in sentiment_counts_by_trust.columns])
+## **1️⃣ Low Trust Scores (1 & 2) Have High Negative Sentiment**
+- Users with lower trust scores tend to express significantly more **negative sentiment**.
+- This suggests dissatisfaction, concerns, or lack of confidence in the system, service, or interactions.
+- Addressing their pain points and investigating key complaints could improve trust and engagement.
 
-# Customize the chart
-plt.title("Sentiment Distribution by Trust Score")
-plt.xlabel("Trust Score")
-plt.ylabel("Count of Sentiments")
-plt.legend(title="Sentiment Category")
-plt.xticks(rotation=45)
-plt.grid(axis='y', linestyle='--', alpha=0.7)
+## **2️⃣ Trust Score 3 Marks a Shift to Positive Sentiment**
+- From a trust score of **3 and above**, we observe a noticeable increase in **positive sentiment**.
+- This indicates that once a certain level of trust is established, users express more favorable opinions.
 
-# Show the plot
-plt.show()
+## **3️⃣ Higher Trust Scores Correlate with More Positive Sentiment**
+- As trust scores increase, positive sentiment becomes dominant.
+- This suggests that fostering **trust-building mechanisms** (e.g., better communication, support, and transparency) could lead to improved overall sentiment.
