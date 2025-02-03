@@ -4,7 +4,7 @@ import numpy as np
 def clean_and_drop_missing(my_df):
     """
     Clean the data by converting 'Not Applicable (N/A)' to NaN and drop rows with missing values.
-    Uses complete case analysis (drops rows with any missing values).
+    No imputation is performed.
 
     Parameters:
     my_df (pandas.DataFrame): Input dataframe
@@ -44,7 +44,7 @@ def clean_and_drop_missing(my_df):
     # Store NA counts after conversion
     summary['na_counts_after'] = df_clean[likert_columns].isna().sum().to_dict()
 
-    # Drop rows with any missing values (complete case analysis)
+    # Drop rows with any missing values
     df_clean = df_clean.dropna(subset=likert_columns)
 
     # Update summary
@@ -63,9 +63,6 @@ def clean_and_drop_missing(my_df):
         print(f"{col}: {pct:.2f}%")
 
     return df_clean, summary
-
-# Example usage:
-# cleaned_df, summary = clean_and_drop_missing(my_df)
 
 def analyze_relationships(df):
     """
