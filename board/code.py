@@ -1,33 +1,20 @@
-from pathlib import Path
-import subprocess
-from typing import Optional, Union
+# Using Databricks SQL
+from pyspark.sql import SparkSession
 
-def get_git_blob_hash(file_path: Union[str, Path]) -> Optional[str]:
-    """
-    Get git blob hash for a file in git repository
-    
-    Args:
-        file_path (Union[str, Path]): Full path or path relative to git repository root
-        
-    Returns:
-        Optional[str]: Git blob hash of the file if successful, None otherwise
-    """
-    try:
-        repo_root = Path(subprocess.check_output(
-            ['git', 'rev-parse', '--show-toplevel'],
-            stderr=subprocess.STDOUT,
-            text=True
-        ).strip())
-        
-        relative_path = Path(file_path).resolve().relative_to(repo_root)
-        
-        result = subprocess.check_output(
-            ['git', 'hash-object', str(relative_path)], 
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=repo_root
-        )
-        return result.strip()
-        
-    except Exception:
-        return None
+# Get or create Spark session
+spark = SparkSession.builder.getOrCreate()
+
+# Query the table
+query = """
+SELECT file_relative_path 
+FROM vfs.target_file_metadata 
+WHERE upload_status = 'pending upload'
+"""
+
+# Execute query and collect results
+df = spark.sql(query)
+file_paths = [row.file_relative_path for row in df.collect()]
+
+# Now file_paths is a Python list containing all the matching file paths
+# You can print it to verify
+print(file_paths)
