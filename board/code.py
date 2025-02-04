@@ -1,20 +1,27 @@
-# Using Databricks SQL
+from typing import List
 from pyspark.sql import SparkSession
 
-# Get or create Spark session
-spark = SparkSession.builder.getOrCreate()
+def get_target_files_by_status(status: str) -> List[str]:
+    """
+    Queries target_file_metadata table and returns file_relative_path values 
+    based on their upload_status.
+    
+    Args:
+        status (str): The upload_status to filter by (e.g., 'pending upload', 'uploaded', 'pending delete')
+        
+    Returns:
+        List[str]: List of target file paths matching the specified status
+    """
+    spark = SparkSession.builder.getOrCreate()
+    
+    df = spark.table("vfs.target_file_metadata") \
+        .filter(df.upload_status == lit(status)) \
+        .select("file_relative_path")
+    
+    target_file_paths = [row.file_relative_path for row in df.collect()]
+    
+    return target_file_paths
 
-# Query the table
-query = """
-SELECT file_relative_path 
-FROM vfs.target_file_metadata 
-WHERE upload_status = 'pending upload'
-"""
-
-# Execute query and collect results
-df = spark.sql(query)
-file_paths = [row.file_relative_path for row in df.collect()]
-
-# Now file_paths is a Python list containing all the matching file paths
-# You can print it to verify
-print(file_paths)
+# Example usage:
+# pending_target_files = get_target_files_by_status('pending upload')
+# uploaded_target_files = get_target_files_by_status('uploaded')
