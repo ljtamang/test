@@ -1,9 +1,33 @@
-import pandas as pd
+from pathlib import Path
+import subprocess
+from typing import Optional, Union
 
-# Calculate the median for the specified columns
-median_scores = my_df[['explain_reason', 'beleive_evidence_fully_reviewed']].median()
-
-# Print the results
-print("\nMedian Scores (1-5 scale):")
-print(f"Explain Reason: {median_scores['explain_reason']}")
-print(f"Believe Evidence Fully Reviewed: {median_scores['beleive_evidence_fully_reviewed']}")
+def get_git_blob_hash(file_path: Union[str, Path]) -> Optional[str]:
+    """
+    Get git blob hash for a file in git repository
+    
+    Args:
+        file_path (Union[str, Path]): Full path or path relative to git repository root
+        
+    Returns:
+        Optional[str]: Git blob hash of the file if successful, None otherwise
+    """
+    try:
+        repo_root = Path(subprocess.check_output(
+            ['git', 'rev-parse', '--show-toplevel'],
+            stderr=subprocess.STDOUT,
+            text=True
+        ).strip())
+        
+        relative_path = Path(file_path).resolve().relative_to(repo_root)
+        
+        result = subprocess.check_output(
+            ['git', 'hash-object', str(relative_path)], 
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=repo_root
+        )
+        return result.strip()
+        
+    except Exception:
+        return None
