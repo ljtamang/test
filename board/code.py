@@ -39,10 +39,10 @@ def upload_file_to_azure_storage(
         shutil.copy2(file_path, dest_path)
         
         return {
-            "original_file_name": os.path.basename(file_path),
             "source_file_relative_path": relative_path,
+            "original_file_name": os.path.basename(file_path),
             "storage_file_name": unique_filename,
-            "storage_path": dest_path,
+            "storage_blob_path": dest_path,
             "upload_status": "success",
             "error_message": None,
             "upload_timestamp": datetime.now(timezone.utc).isoformat()
@@ -50,23 +50,23 @@ def upload_file_to_azure_storage(
         
     except FileNotFoundError as e:
         return {
-            "original_file_name": os.path.basename(file_path),
             "source_file_relative_path": None,
+            "original_file_name": os.path.basename(file_path),
             "storage_file_name": None,
-            "storage_path": None,
+            "storage_blob_path": None,
             "upload_status": "fail",
             "error_message": f"Source file not found: {str(e)}",
-            "upload_timestamp": datetime.now(timezone.utc).isoformat()
+            "upload_timestamp": None
         }
     except Exception as e:
         return {
-            "original_file_name": os.path.basename(file_path),
             "source_file_relative_path": relative_path,
-            "storage_file_name": unique_filename,
-            "storage_path": dest_path,
+            "original_file_name": os.path.basename(file_path),
+            "storage_file_name": None,
+            "storage_blob_path": None,
             "upload_status": "fail",
             "error_message": str(e),
-            "upload_timestamp": datetime.now(timezone.utc).isoformat()
+            "upload_timestamp": None
         }
 
 def bulk_upload_to_azure_storage(
@@ -107,13 +107,13 @@ def bulk_upload_to_azure_storage(
             except Exception as e:
                 file_path = future_to_file[future]
                 upload_results.append({
-                    "original_file_name": os.path.basename(file_path),
                     "source_file_relative_path": None,
+                    "original_file_name": os.path.basename(file_path),
                     "storage_file_name": None,
-                    "storage_path": None,
+                    "storage_blob_path": None,
                     "upload_status": "fail",
                     "error_message": f"Thread execution error: {str(e)}",
-                    "upload_timestamp": datetime.now(timezone.utc).isoformat()
+                    "upload_timestamp": None
                 })
     
     return upload_results
@@ -121,15 +121,39 @@ def bulk_upload_to_azure_storage(
 # Example usage
 if __name__ == "__main__":
     source_files = [
-        "/path/to/repo/documents/report1.pdf",
-        "/path/to/repo/documents/report2.pdf",
-        "/path/to/repo/documents/subfolder/report3.pdf"
+        "/home/user/project/docs/contracts/agreement.pdf",
+        "/home/user/project/docs/specs/design_v2.docx",
+        "/home/user/project/nonexistent.pdf"
     ]
     
     results = bulk_upload_to_azure_storage(
         source_files=source_files,
-        local_repo_path="/path/to/repo",
+        local_repo_path="/home/user/project",
         mount_point="/mnt/azure-storage",
-        destination_folder="reports",
+        destination_folder="uploads",
         max_workers=4
     )
+    
+    # Example output:
+    """
+    [
+        {
+            "source_file_relative_path": "docs/contracts/agreement.pdf",
+            "original_file_name": "agreement.pdf",
+            "storage_file_name": "agreement_a7b3c9d2.pdf",
+            "storage_blob_path": "/mnt/azure-storage/uploads/agreement_a7b3c9d2.pdf",
+            "upload_status": "success",
+            "error_message": None,
+            "upload_timestamp": "2025-02-10T15:30:45.123456+00:00"
+        },
+        {
+            "source_file_relative_path": None,
+            "original_file_name": "nonexistent.pdf",
+            "storage_file_name": None,
+            "storage_blob_path": None,
+            "upload_status": "fail",
+            "error_message": "Source file not found: [Errno 2] No such file or directory: '/home/user/project/nonexistent.pdf'",
+            "upload_timestamp": None
+        }
+    ]
+    """
