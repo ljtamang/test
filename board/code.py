@@ -1,10 +1,11 @@
-from pyspark.sql.functions import current_timestamp, lit
+from pyspark.sql.functions import current_timestamp, lit, to_timestamp
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import (
     StructType, StructField, StringType, TimestampType, 
     BooleanType, ArrayType
 )
 from datetime import datetime
+import pytz
 from typing import Dict, List, Optional
 import logging
 import os
@@ -18,8 +19,7 @@ logger = logging.getLogger(__name__)
 success_upload_schema = StructType([
     StructField("source_file_relative_path", StringType(), False),
     StructField("blob_path", StringType(), True),
-    StructField("upload_time", TimestampType(), True),
-    StructField("error_message", StringType(), True)
+    StructField("timestamp_str", StringType(), True)  # Store ISO timestamp as string
 ])
 
 failed_operation_schema = StructType([
@@ -95,8 +95,7 @@ def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Di
                 'success': True,
                 'source_file_relative_path': file_path,
                 'blob_path': f"/dbfs/mnt/dir/{os.path.basename(file_path).split('.')[0]}_057de.txt",
-                'timestamp': datetime.utcnow(),
-                'error_message': None
+                'timestamp': datetime.now(pytz.UTC).isoformat()
             })
         except Exception as e:
             logger.error(f"Failed to upload {file_path}: {str(e)}")
@@ -175,8 +174,7 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
     successful_uploads = [(
         result['source_file_relative_path'],
         result['blob_path'],
-        result['timestamp'],
-        None  # Clear error message for success
+        result['timestamp']  # ISO formatted timestamp string
     ) for result in upload_results if result['success']]
     
     failed_uploads = [(
@@ -193,9 +191,10 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
     # Update successful uploads
     if successful_uploads:
         try:
+            # Create DataFrame with column names matching the schema
             success_df = spark.createDataFrame(
                 successful_uploads,
-                schema=success_upload_schema
+                ["source_file_relative_path", "blob_path", "timestamp"]  # Define column names explicitly
             )
             
             (spark.table(FILE_METADATA_TABLE)
@@ -207,8 +206,8 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
                 .whenMatched()
                 .updateExpr({
                     "blob_path": "updates.blob_path",
-                    "last_upload_on": "updates.upload_time",
-                    "error_message": "updates.error_message",
+                    "last_upload_on": "to_timestamp(updates.timestamp)",  # Match the column name from DataFrame
+                    "error_message": "NULL",  # Explicitly set error_message to NULL for successful uploads
                     "etl_updated_at": "current_timestamp()"
                 })
                 .execute())
