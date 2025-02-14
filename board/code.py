@@ -22,6 +22,7 @@ def get_files_by_status(file_statuses: List[str]) -> List[str]:
     # Create comma-separated string of quoted statuses
     quoted_statuses = ", ".join(f"'{status}'" for status in file_statuses)
     status_condition = f"file_status IN ({quoted_statuses})"
+    # Example: status_condition = "file_status IN ('pending_upload', 'pending_update')"
     
     pending_files = (spark.table(FILE_METADATA_TABLE)
         .filter(status_condition)
