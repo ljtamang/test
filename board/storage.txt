@@ -1,1 +1,11 @@
+print(spark.conf.get("spark.jars.packages"))  # Should show delta lake version
 
+from delta.tables import DeltaTable
+
+
+spark = SparkSession.builder \
+    .appName("FileMetadataSync") \
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+    .config("spark.jars.packages", "io.delta:delta-core_2.12:3.0.0") \  # Add this line
+    .getOrCreate()
