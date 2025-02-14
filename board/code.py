@@ -31,6 +31,17 @@ DELETE_PATH_SCHEMA = StructType([
     StructField("source_file_relative_path", StringType(), False)
 ])
 
+def get_standard_time() -> str:
+    """
+    Returns current time in ISO format with UTC timezone
+    
+    Returns:
+        str: Current timestamp in ISO format with UTC timezone
+              Format: YYYY-MM-DDTHH:MM:SS.mmmmmm+00:00
+              Example: 2024-02-14T10:30:15.123456+00:00
+    """
+    return datetime.now(pytz.UTC).isoformat()
+
 def get_files_by_status(file_statuses: List[str]) -> List[str]:
     """
     Retrieve file paths from metadata table matching specified statuses
@@ -71,7 +82,7 @@ def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Di
                 'success': True,
                 'source_file_relative_path': str,
                 'blob_path': str,
-                'timestamp': str (ISO format)
+                'timestamp': str (ISO format with UTC timezone)
             }
         For failure case:
             {
@@ -93,7 +104,7 @@ def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Di
                 'success': True,
                 'source_file_relative_path': file_path,
                 'blob_path': f"/dbfs/mnt/dir/{os.path.basename(file_path).split('.')[0]}_057de.txt",
-                'timestamp': datetime.now(pytz.UTC).isoformat()
+                'timestamp': get_standard_time()
             })
         except Exception as e:
             logger.error(f"Failed to upload {file_path}: {str(e)}")
@@ -165,7 +176,7 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
     if not upload_results:
         return
 
-    # Separate successful and failed uploads - ensure tuple structure matches schema
+    # Separate successful and failed uploads
     successful_uploads = [(
         result['source_file_relative_path'],
         result['blob_path'],
@@ -202,7 +213,7 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
                     "blob_path": "updates.blob_path",
                     "last_upload_on": "to_timestamp(updates.timestamp)",
                     "error_message": "NULL",
-                    "etl_updated_at": "current_timestamp()"
+                    "etl_updated_at": f"to_timestamp('{get_standard_time()}')"
                 })
                 .execute())
         except Exception as e:
@@ -225,7 +236,7 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
                 .whenMatched()
                 .updateExpr({
                     "error_message": "updates.error_message",
-                    "etl_updated_at": "current_timestamp()"
+                    "etl_updated_at": f"to_timestamp('{get_standard_time()}')"
                 })
                 .execute())
         except Exception as e:
@@ -300,7 +311,7 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
                 .whenMatched()
                 .updateExpr({
                     "error_message": "updates.error_message",
-                    "etl_updated_at": "current_timestamp()"
+                    "etl_updated_at": f"to_timestamp('{get_standard_time()}')"
                 })
                 .execute())
         except Exception as e:
