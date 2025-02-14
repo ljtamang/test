@@ -1,8 +1,9 @@
 from pyspark.sql.functions import current_timestamp, lit
+from pyspark.sql import SparkSession, DataFrame
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 import logging
-from pyspark.sql import SparkSession
+import os
 
 # Global configurations
 spark = SparkSession.builder.appName("FileMetadataSync").getOrCreate()
@@ -11,18 +12,21 @@ logger = logging.getLogger(__name__)
 
 def get_files_by_status(file_statuses: List[str]) -> List[str]:
     """
-    Get list of file paths that have the specified status(es)
+    Retrieve file paths from metadata table matching specified statuses
     
     Args:
-        file_statuses: List of file statuses to filter by (e.g. ['pending_upload', 'pending_update'])
+        file_statuses: List of status values to filter by 
+                      e.g. ['pending_upload', 'pending_update']
     
     Returns:
-        List of file relative paths matching the given status(es)
+        List[str]: List of file_relative_paths matching any of the given statuses
+    
+    Example:
+        >>> get_files_by_status(['pending_upload', 'pending_update'])
+        ['path/to/file1.txt', 'path/to/file2.txt']
     """
-    # Create comma-separated string of quoted statuses
     quoted_statuses = ", ".join(f"'{status}'" for status in file_statuses)
     status_condition = f"file_status IN ({quoted_statuses})"
-    # Example: status_condition = "file_status IN ('pending_upload', 'pending_update')"
     
     pending_files = (spark.table(FILE_METADATA_TABLE)
         .filter(status_condition)
@@ -31,29 +35,41 @@ def get_files_by_status(file_statuses: List[str]) -> List[str]:
     
     return [row.file_relative_path for row in pending_files]
 
-
 def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Dict]:
     """
-    Placeholder for Azure upload function
+    Upload files to Azure storage
+    
     Args:
-        files_to_upload: List of relative file paths
-        local_repo_path: Base path to create full file paths
-    Returns: 
-        List of results, one per file:
-        [
+        files_to_upload: List of relative file paths to upload
+        local_repo_path: Base directory path to construct full file paths
+    
+    Returns:
+        List[Dict]: List of result dictionaries, one per file:
+        For success case:
             {
                 'success': True,
-                'file_relative_path': 'folder/file1.txt',
-                'blob_path': '/dbfs/mnt/dir/file1_057de.txt',
-                'timestamp': datetime object,
+                'file_relative_path': str,
+                'blob_path': str,
+                'timestamp': datetime,
                 'error': None
-            },
+            }
+        For failure case:
             {
                 'success': False,
-                'file_relative_path': 'folder/file2.txt',
-                'error': 'Failed to upload file'
+                'file_relative_path': str,
+                'error': str
             }
-        ]
+    
+    Example:
+        >>> results = upload_to_azure(['file1.txt'], '/tmp/repo')
+        >>> results[0]
+        {
+            'success': True,
+            'file_relative_path': 'file1.txt',
+            'blob_path': '/dbfs/mnt/dir/file1_057de.txt',
+            'timestamp': datetime(2024, 2, 14, 10, 30),
+            'error': None
+        }
     """
     results = []
     for file_path in files_to_upload:
@@ -79,24 +95,35 @@ def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Di
 
 def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[Dict]:
     """
-    Placeholder for Azure delete function
+    Delete files from Azure storage
+    
     Args:
-        files_to_delete: List of relative file paths
-        local_repo_path: Base path to create full file paths
+        files_to_delete: List of relative file paths to delete
+        local_repo_path: Base directory path to construct full file paths
+    
     Returns:
-        List of results, one per file:
-        [
+        List[Dict]: List of result dictionaries, one per file:
+        For success case:
             {
                 'success': True,
-                'file_relative_path': 'folder/file1.txt',
+                'file_relative_path': str,
                 'error': None
-            },
+            }
+        For failure case:
             {
                 'success': False,
-                'file_relative_path': 'folder/file2.txt',
-                'error': 'Failed to delete file'
+                'file_relative_path': str,
+                'error': str
             }
-        ]
+    
+    Example:
+        >>> results = delete_from_azure(['file1.txt'], '/tmp/repo')
+        >>> results[0]
+        {
+            'success': True,
+            'file_relative_path': 'file1.txt',
+            'error': None
+        }
     """
     results = []
     for file_path in files_to_delete:
@@ -118,31 +145,29 @@ def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[
     
     return results
 
-def get_files_by_status(file_statuses: List[str]) -> List[str]:
-    """
-    Get list of file paths that have the specified status(es)
-    
-    Args:
-        file_statuses: List of file statuses to filter by (e.g. ['pending_upload', 'pending_update'])
-    
-    Returns:
-        List of file relative paths matching the given status(es)
-    """
-    status_condition = f"file_status IN ({','.join([f"'{status}'" for status in file_statuses])})"
-    
-    pending_files = (spark.table(FILE_METADATA_TABLE)
-        .filter(status_condition)
-        .select("file_relative_path")
-        .collect())
-    
-    return [row.file_relative_path for row in pending_files]
-
 def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
     """
-    Synchronize metadata table after Azure storage upload operations.
-    - For successful uploads: Updates blob_path, last_upload_on, clears error_message
-    - For failed uploads: Only updates error_message
-    - Always updates etl_updated_at for any operation attempt
+    Update metadata table after file upload operations
+    
+    Args:
+        upload_results: List of upload operation results from upload_to_azure()
+    
+    Actions:
+        For successful uploads:
+        - Updates blob_path with new path
+        - Updates last_upload_on with upload timestamp
+        - Clears error_message
+        - Updates etl_updated_at
+        
+        For failed uploads:
+        - Updates error_message with failure reason
+        - Updates etl_updated_at
+        - Keeps existing blob_path and last_upload_on
+    
+    Example:
+        >>> results = upload_to_azure(['file1.txt'], '/tmp/repo')
+        >>> sync_metadata_after_upload(results)
+        # Updates metadata table based on results
     """
     if not upload_results:
         return
@@ -152,7 +177,7 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
         result['file_relative_path'],
         result['blob_path'],
         result['timestamp'],
-        None  # Clear error message for successful uploads
+        None  # Clear error message for success
     ) for result in upload_results if result['success']]
     
     failed_uploads = [(
@@ -166,14 +191,13 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
     fail_count = len(failed_uploads)
     logger.info(f"Upload summary: {success_count} of {total_files} files processed successfully, {fail_count} failed")
     
-    # Handle successful uploads
+    # Update successful uploads
     if successful_uploads:
         success_df = spark.createDataFrame(
             successful_uploads,
             ["file_relative_path", "blob_path", "upload_time", "error_message"]
         )
         
-        # Update successful uploads with new blob_path, timestamp, and clear error
         (spark.table(FILE_METADATA_TABLE)
             .alias("target")
             .merge(
@@ -189,14 +213,13 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
             })
             .execute())
     
-    # Handle failed uploads
+    # Update failed uploads
     if failed_uploads:
         failed_df = spark.createDataFrame(
             failed_uploads,
             ["file_relative_path", "error_message"]
         )
         
-        # Update only error message for failed uploads
         (spark.table(FILE_METADATA_TABLE)
             .alias("target")
             .merge(
@@ -212,12 +235,31 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
 
 def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
     """
-    Synchronize metadata table after Azure storage deletion operations
-    Removes records for successful deletions and updates error messages for failed ones
+    Update metadata table after file deletion operations
+    
+    Args:
+        delete_results: List of deletion operation results from delete_from_azure()
+    
+    Actions:
+        For successful deletions:
+        - Removes the record from metadata table
+        
+        For failed deletions:
+        - Updates error_message with failure reason
+        - Updates etl_updated_at
+        - Keeps existing record
+    
+    Example:
+        >>> results = delete_from_azure(['file1.txt'], '/tmp/repo')
+        >>> sync_metadata_after_deletion(results)
+        # Updates metadata table based on results
     """
+    if not delete_results:
+        return
+
     # Separate successful and failed deletes
     successful_deletes = [
-        result['file_relative_path'] 
+        result['file_relative_path']
         for result in delete_results if result['success']
     ]
     
@@ -232,14 +274,13 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
     fail_count = len(failed_deletes)
     logger.info(f"Deletion summary: {success_count} of {total_files} files processed successfully, {fail_count} failed")
     
-    # Handle successful deletions
+    # Process successful deletions
     if successful_deletes:
         deletes_df = spark.createDataFrame(
             [(path,) for path in successful_deletes],
             ["file_relative_path"]
         )
         
-        # Delete successful records
         (spark.table(FILE_METADATA_TABLE)
             .alias("target")
             .merge(
@@ -250,14 +291,13 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
             .delete()
             .execute())
     
-    # Handle failed deletions
+    # Update failed deletions
     if failed_deletes:
         failed_df = spark.createDataFrame(
             failed_deletes,
             ["file_relative_path", "error_message"]
         )
         
-        # Update error messages for failed deletes
         (spark.table(FILE_METADATA_TABLE)
             .alias("target")
             .merge(
@@ -273,8 +313,21 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
 
 def process_pending_file_operations(local_repo_path: str) -> None:
     """
-    Process all pending file operations (uploads, updates, deletions) and 
-    synchronize metadata table with Azure storage state
+    Process all pending file operations and sync metadata table
+    
+    Args:
+        local_repo_path: Base directory path used to construct full file paths
+                        for Azure storage operations
+    
+    Actions:
+        1. Gets files with pending upload/update status
+        2. Gets files with pending delete status
+        3. Processes uploads and updates metadata
+        4. Processes deletions and updates metadata
+    
+    Example:
+        >>> process_pending_file_operations('/tmp/repo')
+        # Processes all pending operations and updates metadata table
     """
     # Get files for upload/update operations
     to_upload = get_files_by_status(['pending_upload', 'pending_update'])
@@ -292,10 +345,7 @@ def process_pending_file_operations(local_repo_path: str) -> None:
         delete_results = delete_from_azure(to_delete, local_repo_path)
         sync_metadata_after_deletion(delete_results)
 
-# Example usage:
+# Example usage
 def main():
     local_repo_path = "/tmp/vfs"
     process_pending_file_operations(local_repo_path)
-
-if __name__ == "__main__":
-    main()
