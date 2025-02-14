@@ -1,17 +1,18 @@
-from pyspark.sql.functions import current_timestamp, lit, to_timestamp
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.types import (
-    StructType, StructField, StringType, TimestampType, 
-    BooleanType, ArrayType
-)
-from datetime import datetime
 import pytz
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, List
 import logging
 import os
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType
 
 # Global configurations
-spark = SparkSession.builder.appName("FileMetadataSync").getOrCreate()
+spark = SparkSession.builder \
+    .appName("FileMetadataSync") \
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+    .getOrCreate()
+
 FILE_METADATA_TABLE = "target_file_metadata"
 logger = logging.getLogger(__name__)
 
@@ -163,15 +164,10 @@ def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[
 
 def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
     """
-    Update metadata table after file upload operations
+    Update metadata table after file upload operations using Delta Lake merge syntax with aliases
     
     Args:
         upload_results: List of upload operation results from upload_to_azure()
-    
-    Returns:
-        None. Updates the metadata table with the results of upload operations:
-        - For successful uploads: Updates blob_path, last_upload_on, error_message, and etl_updated_at
-        - For failed uploads: Updates error_message and etl_updated_at
     """
     if not upload_results:
         return
@@ -202,14 +198,13 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
                 schema=UPLOAD_SUCCESS_SCHEMA
             )
             
-            (spark.table(FILE_METADATA_TABLE)
-                .alias("target")
+            # Delta Lake merge syntax with aliases
+            (spark.table(FILE_METADATA_TABLE).alias("target")
                 .merge(
                     success_df.alias("updates"),
                     "target.source_file_relative_path = updates.source_file_relative_path"
                 )
-                .whenMatched()
-                .updateExpr({
+                .whenMatchedUpdate(set={
                     "blob_path": "updates.blob_path",
                     "last_upload_on": "to_timestamp(updates.timestamp)",
                     "error_message": "NULL",
@@ -227,14 +222,13 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
                 schema=FAILED_OPERATION_SCHEMA
             )
             
-            (spark.table(FILE_METADATA_TABLE)
-                .alias("target")
+            # Delta Lake merge syntax with aliases
+            (spark.table(FILE_METADATA_TABLE).alias("target")
                 .merge(
                     failed_df.alias("updates"),
                     "target.source_file_relative_path = updates.source_file_relative_path"
                 )
-                .whenMatched()
-                .updateExpr({
+                .whenMatchedUpdate(set={
                     "error_message": "updates.error_message",
                     "etl_updated_at": f"to_timestamp('{get_standard_time()}')"
                 })
@@ -244,22 +238,17 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
 
 def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
     """
-    Update metadata table after file deletion operations
+    Update metadata table after file deletion operations using Delta Lake merge syntax with aliases
     
     Args:
         delete_results: List of deletion operation results from delete_from_azure()
-    
-    Returns:
-        None. Updates the metadata table with the results of deletion operations:
-        - For successful deletions: Removes the corresponding records from the metadata table
-        - For failed deletions: Updates error_message and etl_updated_at
     """
     if not delete_results:
         return
 
     # Separate successful and failed deletes
     successful_deletes = [
-        (result['source_file_relative_path'],)  # Note the comma to create a single-element tuple
+        (result['source_file_relative_path'],)
         for result in delete_results if result['success']
     ]
     
@@ -282,14 +271,13 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
                 schema=DELETE_PATH_SCHEMA
             )
             
-            (spark.table(FILE_METADATA_TABLE)
-                .alias("target")
+            # Delta Lake merge syntax with aliases
+            (spark.table(FILE_METADATA_TABLE).alias("target")
                 .merge(
                     deletes_df.alias("deletes"),
                     "target.source_file_relative_path = deletes.source_file_relative_path"
                 )
-                .whenMatched()
-                .delete()
+                .whenMatchedDelete()
                 .execute())
         except Exception as e:
             logger.error(f"Failed to update metadata for successful deletions: {str(e)}")
@@ -302,14 +290,13 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
                 schema=FAILED_OPERATION_SCHEMA
             )
             
-            (spark.table(FILE_METADATA_TABLE)
-                .alias("target")
+            # Delta Lake merge syntax with aliases
+            (spark.table(FILE_METADATA_TABLE).alias("target")
                 .merge(
                     failed_df.alias("updates"),
                     "target.source_file_relative_path = updates.source_file_relative_path"
                 )
-                .whenMatched()
-                .updateExpr({
+                .whenMatchedUpdate(set={
                     "error_message": "updates.error_message",
                     "etl_updated_at": f"to_timestamp('{get_standard_time()}')"
                 })
@@ -324,12 +311,6 @@ def process_pending_file_operations(local_repo_path: str) -> None:
     Args:
         local_repo_path: Base directory path used to construct full file paths
                         for Azure storage operations
-    
-    Returns:
-        None. Processes all pending file operations and updates the metadata table:
-        1. Retrieves and processes files with pending upload/update status
-        2. Retrieves and processes files with pending delete status
-        3. Updates metadata table with results of all operations
     """
     try:
         # Get files for upload/update operations
@@ -355,10 +336,6 @@ def process_pending_file_operations(local_repo_path: str) -> None:
 def main() -> None:
     """
     Main entry point for the file metadata sync process
-    
-    Returns:
-        None. Executes the file metadata sync process with default configuration.
-        Raises any encountered exceptions after logging them.
     """
     try:
         local_repo_path = "/tmp/vfs"
