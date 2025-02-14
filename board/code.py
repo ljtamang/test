@@ -15,19 +15,19 @@ spark = SparkSession.builder.appName("FileMetadataSync").getOrCreate()
 FILE_METADATA_TABLE = "target_file_metadata"
 logger = logging.getLogger(__name__)
 
-# Define schemas for DataFrames
-success_upload_schema = StructType([
+# Define schemas at module level
+UPLOAD_SUCCESS_SCHEMA = StructType([
     StructField("source_file_relative_path", StringType(), False),
     StructField("blob_path", StringType(), True),
-    StructField("timestamp_str", StringType(), True)  # Store ISO timestamp as string
+    StructField("timestamp", StringType(), True)
 ])
 
-failed_operation_schema = StructType([
+FAILED_OPERATION_SCHEMA = StructType([
     StructField("source_file_relative_path", StringType(), False),
     StructField("error_message", StringType(), True)
 ])
 
-delete_path_schema = StructType([
+DELETE_PATH_SCHEMA = StructType([
     StructField("source_file_relative_path", StringType(), False)
 ])
 
@@ -71,8 +71,7 @@ def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Di
                 'success': True,
                 'source_file_relative_path': str,
                 'blob_path': str,
-                'timestamp': datetime,
-                'error_message': None
+                'timestamp': str (ISO format)
             }
         For failure case:
             {
@@ -80,7 +79,6 @@ def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Di
                 'source_file_relative_path': str,
                 'error_message': str
             }
-        Returns empty list if files_to_upload is empty.
     """
     results = []
     for file_path in files_to_upload:
@@ -120,8 +118,7 @@ def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[
         For success case:
             {
                 'success': True,
-                'source_file_relative_path': str,
-                'error_message': None
+                'source_file_relative_path': str
             }
         For failure case:
             {
@@ -129,7 +126,6 @@ def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[
                 'source_file_relative_path': str,
                 'error_message': str
             }
-        Returns empty list if files_to_delete is empty.
     """
     results = []
     for file_path in files_to_delete:
@@ -142,8 +138,7 @@ def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[
             
             results.append({
                 'success': True,
-                'source_file_relative_path': file_path,
-                'error_message': None
+                'source_file_relative_path': file_path
             })
         except Exception as e:
             logger.error(f"Failed to delete {file_path}: {str(e)}")
@@ -170,11 +165,11 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
     if not upload_results:
         return
 
-    # Separate successful and failed uploads
+    # Separate successful and failed uploads - ensure tuple structure matches schema
     successful_uploads = [(
         result['source_file_relative_path'],
         result['blob_path'],
-        result['timestamp']  # ISO formatted timestamp string
+        result['timestamp']
     ) for result in upload_results if result['success']]
     
     failed_uploads = [(
@@ -191,10 +186,9 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
     # Update successful uploads
     if successful_uploads:
         try:
-            # Create DataFrame with column names matching the schema
             success_df = spark.createDataFrame(
                 successful_uploads,
-                ["source_file_relative_path", "blob_path", "timestamp"]  # Define column names explicitly
+                schema=UPLOAD_SUCCESS_SCHEMA
             )
             
             (spark.table(FILE_METADATA_TABLE)
@@ -206,8 +200,8 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
                 .whenMatched()
                 .updateExpr({
                     "blob_path": "updates.blob_path",
-                    "last_upload_on": "to_timestamp(updates.timestamp)",  # Match the column name from DataFrame
-                    "error_message": "NULL",  # Explicitly set error_message to NULL for successful uploads
+                    "last_upload_on": "to_timestamp(updates.timestamp)",
+                    "error_message": "NULL",
                     "etl_updated_at": "current_timestamp()"
                 })
                 .execute())
@@ -219,7 +213,7 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
         try:
             failed_df = spark.createDataFrame(
                 failed_uploads,
-                schema=failed_operation_schema
+                schema=FAILED_OPERATION_SCHEMA
             )
             
             (spark.table(FILE_METADATA_TABLE)
@@ -254,7 +248,7 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
 
     # Separate successful and failed deletes
     successful_deletes = [
-        result['source_file_relative_path']
+        (result['source_file_relative_path'],)  # Note the comma to create a single-element tuple
         for result in delete_results if result['success']
     ]
     
@@ -273,8 +267,8 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
     if successful_deletes:
         try:
             deletes_df = spark.createDataFrame(
-                [(path,) for path in successful_deletes],
-                schema=delete_path_schema
+                successful_deletes,
+                schema=DELETE_PATH_SCHEMA
             )
             
             (spark.table(FILE_METADATA_TABLE)
@@ -294,7 +288,7 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
         try:
             failed_df = spark.createDataFrame(
                 failed_deletes,
-                schema=failed_operation_schema
+                schema=FAILED_OPERATION_SCHEMA
             )
             
             (spark.table(FILE_METADATA_TABLE)
