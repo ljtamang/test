@@ -1,159 +1,278 @@
-import os
-from datetime import datetime, timezone
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict
-import hashlib
-import shutil
+from pyspark.sql.functions import current_timestamp, lit
+from datetime import datetime
+from typing import Dict, List
+import logging
+from pyspark.sql import SparkSession
 
-def generate_unique_filename(file_path: str) -> str:
-    """
-    Generate a unique filename with hash suffix for RAG pipeline.
-    """
-    path_hash = hashlib.md5(file_path.encode()).hexdigest()[:8]
-    original_name, file_extension = os.path.splitext(os.path.basename(file_path))
-    return f"{original_name}_{path_hash}{file_extension}"
+# Global configurations
+spark = SparkSession.builder.appName("FileMetadataSync").getOrCreate()
+FILE_METADATA_TABLE = "target_file_metadata"
+logger = logging.getLogger(__name__)
 
-def upload_file_to_azure_storage(
-    file_path: str,
-    local_repo_path: str,
-    mount_point: str,
-    destination_folder: str
-) -> Dict:
+def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Dict]:
     """
-    Copy a single file to Azure Storage mount point.
+    Placeholder for Azure upload function
     Args:
-        file_path: Path to the file to copy
-        local_repo_path: Base path of the local repository for relative path calculation
-        mount_point: Azure Storage mount point base path
-        destination_folder: Folder path within the mount point
+        files_to_upload: List of relative file paths
+        local_repo_path: Base path to create full file paths
+    Returns: 
+        List of results, one per file:
+        [
+            {
+                'success': True,
+                'file_relative_path': 'folder/file1.txt',
+                'blob_path': '/dbfs/mnt/dir/file1_057de.txt',
+                'timestamp': datetime object,
+                'error': None
+            },
+            {
+                'success': False,
+                'file_relative_path': 'folder/file2.txt',
+                'error': 'Failed to upload file'
+            }
+        ]
     """
-    try:
-        unique_filename = generate_unique_filename(file_path)
-        relative_path = os.path.relpath(file_path, local_repo_path)
-        dest_path = os.path.join(mount_point, destination_folder, unique_filename)
-        
-        # Create destination directory if it doesn't exist
-        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-        
-        # Copy the file
-        shutil.copy2(file_path, dest_path)
-        
-        return {
-            "source_file_relative_path": relative_path,
-            "original_file_name": os.path.basename(file_path),
-            "storage_file_name": unique_filename,
-            "storage_blob_path": dest_path,
-            "upload_status": "success",
-            "error_message": None,
-            "upload_timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-    except FileNotFoundError as e:
-        return {
-            "source_file_relative_path": None,
-            "original_file_name": os.path.basename(file_path),
-            "storage_file_name": None,
-            "storage_blob_path": None,
-            "upload_status": "fail",
-            "error_message": f"Source file not found: {str(e)}",
-            "upload_timestamp": None
-        }
-    except Exception as e:
-        return {
-            "source_file_relative_path": relative_path,
-            "original_file_name": os.path.basename(file_path),
-            "storage_file_name": None,
-            "storage_blob_path": None,
-            "upload_status": "fail",
-            "error_message": str(e),
-            "upload_timestamp": None
-        }
+    results = []
+    for file_path in files_to_upload:
+        try:
+            full_path = os.path.join(local_repo_path, file_path)
+            # Azure upload logic here using full_path
+            
+            results.append({
+                'success': True,
+                'file_relative_path': file_path,
+                'blob_path': f"/dbfs/mnt/dir/{os.path.basename(file_path).split('.')[0]}_057de.txt",
+                'timestamp': datetime.utcnow(),
+                'error': None
+            })
+        except Exception as e:
+            results.append({
+                'success': False,
+                'file_relative_path': file_path,
+                'error': str(e)
+            })
+    
+    return results
 
-def bulk_upload_to_azure_storage(
-    source_files: List[str],
-    local_repo_path: str,
-    mount_point: str,
-    destination_folder: str,
-    max_workers: int = 4
-) -> List[Dict]:
+def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[Dict]:
     """
-    Perform bulk copy to Azure Storage mount point with metadata tracking.
+    Placeholder for Azure delete function
     Args:
-        source_files: List of file paths to copy
-        local_repo_path: Base path of the local repository for relative path calculation
-        mount_point: Azure Storage mount point base path
-        destination_folder: Folder path within the mount point
-        max_workers: Maximum number of concurrent copies
+        files_to_delete: List of relative file paths
+        local_repo_path: Base path to create full file paths
     Returns:
-        List of dictionaries containing copy results for each file
+        List of results, one per file:
+        [
+            {
+                'success': True,
+                'file_relative_path': 'folder/file1.txt',
+                'error': None
+            },
+            {
+                'success': False,
+                'file_relative_path': 'folder/file2.txt',
+                'error': 'Failed to delete file'
+            }
+        ]
     """
-    upload_results = []
+    results = []
+    for file_path in files_to_delete:
+        try:
+            full_path = os.path.join(local_repo_path, file_path)
+            # Azure delete logic here using full_path
+            
+            results.append({
+                'success': True,
+                'file_relative_path': file_path,
+                'error': None
+            })
+        except Exception as e:
+            results.append({
+                'success': False,
+                'file_relative_path': file_path,
+                'error': str(e)
+            })
     
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_file = {
-            executor.submit(
-                upload_file_to_azure_storage,
-                file_path,
-                local_repo_path,
-                mount_point,
-                destination_folder
-            ): file_path for file_path in source_files
-        }
-        
-        for future in as_completed(future_to_file):
-            try:
-                result = future.result()
-                upload_results.append(result)
-            except Exception as e:
-                file_path = future_to_file[future]
-                upload_results.append({
-                    "source_file_relative_path": None,
-                    "original_file_name": os.path.basename(file_path),
-                    "storage_file_name": None,
-                    "storage_blob_path": None,
-                    "upload_status": "fail",
-                    "error_message": f"Thread execution error: {str(e)}",
-                    "upload_timestamp": None
-                })
-    
-    return upload_results
+    return results
 
-# Example usage
+def get_files_by_status(file_statuses: List[str]) -> List[str]:
+    """
+    Get list of file paths that have the specified status(es)
+    
+    Args:
+        file_statuses: List of file statuses to filter by (e.g. ['pending_upload', 'pending_update'])
+    
+    Returns:
+        List of file relative paths matching the given status(es)
+    """
+    status_condition = f"file_status IN ({','.join([f"'{status}'" for status in file_statuses])})"
+    
+    pending_files = (spark.table(FILE_METADATA_TABLE)
+        .filter(status_condition)
+        .select("file_relative_path")
+        .collect())
+    
+    return [row.file_relative_path for row in pending_files]
+
+def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
+    """
+    Synchronize metadata table after Azure storage upload operations.
+    - For successful uploads: Updates blob_path, last_upload_on, clears error_message
+    - For failed uploads: Only updates error_message
+    - Always updates etl_updated_at for any operation attempt
+    """
+    if not upload_results:
+        return
+
+    # Separate successful and failed uploads
+    successful_uploads = [(
+        result['file_relative_path'],
+        result['blob_path'],
+        result['timestamp'],
+        None  # Clear error message for successful uploads
+    ) for result in upload_results if result['success']]
+    
+    failed_uploads = [(
+        result['file_relative_path'],
+        result['error']
+    ) for result in upload_results if not result['success']]
+    
+    # Log summary
+    total_files = len(upload_results)
+    success_count = len(successful_uploads)
+    fail_count = len(failed_uploads)
+    logger.info(f"Upload summary: {success_count} of {total_files} files processed successfully, {fail_count} failed")
+    
+    # Handle successful uploads
+    if successful_uploads:
+        success_df = spark.createDataFrame(
+            successful_uploads,
+            ["file_relative_path", "blob_path", "upload_time", "error_message"]
+        )
+        
+        # Update successful uploads with new blob_path, timestamp, and clear error
+        (spark.table(FILE_METADATA_TABLE)
+            .alias("target")
+            .merge(
+                success_df.alias("updates"),
+                "target.file_relative_path = updates.file_relative_path"
+            )
+            .whenMatched()
+            .updateExpr({
+                "blob_path": "updates.blob_path",
+                "last_upload_on": "updates.upload_time",
+                "error_message": "updates.error_message",
+                "etl_updated_at": "current_timestamp()"
+            })
+            .execute())
+    
+    # Handle failed uploads
+    if failed_uploads:
+        failed_df = spark.createDataFrame(
+            failed_uploads,
+            ["file_relative_path", "error_message"]
+        )
+        
+        # Update only error message for failed uploads
+        (spark.table(FILE_METADATA_TABLE)
+            .alias("target")
+            .merge(
+                failed_df.alias("updates"),
+                "target.file_relative_path = updates.file_relative_path"
+            )
+            .whenMatched()
+            .updateExpr({
+                "error_message": "updates.error_message",
+                "etl_updated_at": "current_timestamp()"
+            })
+            .execute())
+
+def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
+    """
+    Synchronize metadata table after Azure storage deletion operations
+    Removes records for successful deletions and updates error messages for failed ones
+    """
+    # Separate successful and failed deletes
+    successful_deletes = [
+        result['file_relative_path'] 
+        for result in delete_results if result['success']
+    ]
+    
+    failed_deletes = [(
+        result['file_relative_path'],
+        result['error']
+    ) for result in delete_results if not result['success']]
+    
+    # Log summary
+    total_files = len(delete_results)
+    success_count = len(successful_deletes)
+    fail_count = len(failed_deletes)
+    logger.info(f"Deletion summary: {success_count} of {total_files} files processed successfully, {fail_count} failed")
+    
+    # Handle successful deletions
+    if successful_deletes:
+        deletes_df = spark.createDataFrame(
+            [(path,) for path in successful_deletes],
+            ["file_relative_path"]
+        )
+        
+        # Delete successful records
+        (spark.table(FILE_METADATA_TABLE)
+            .alias("target")
+            .merge(
+                deletes_df.alias("deletes"),
+                "target.file_relative_path = deletes.file_relative_path"
+            )
+            .whenMatched()
+            .delete()
+            .execute())
+    
+    # Handle failed deletions
+    if failed_deletes:
+        failed_df = spark.createDataFrame(
+            failed_deletes,
+            ["file_relative_path", "error_message"]
+        )
+        
+        # Update error messages for failed deletes
+        (spark.table(FILE_METADATA_TABLE)
+            .alias("target")
+            .merge(
+                failed_df.alias("updates"),
+                "target.file_relative_path = updates.file_relative_path"
+            )
+            .whenMatched()
+            .updateExpr({
+                "error_message": "updates.error_message",
+                "etl_updated_at": "current_timestamp()"
+            })
+            .execute())
+
+def process_pending_file_operations(local_repo_path: str) -> None:
+    """
+    Process all pending file operations (uploads, updates, deletions) and 
+    synchronize metadata table with Azure storage state
+    """
+    # Get files for upload/update operations
+    to_upload = get_files_by_status(['pending_upload', 'pending_update'])
+    
+    # Get files for deletion
+    to_delete = get_files_by_status(['pending_delete'])
+
+    # Process uploads
+    if to_upload:
+        upload_results = upload_to_azure(to_upload, local_repo_path)
+        sync_metadata_after_upload(upload_results)
+
+    # Process deletions
+    if to_delete:
+        delete_results = delete_from_azure(to_delete, local_repo_path)
+        sync_metadata_after_deletion(delete_results)
+
+# Example usage:
+def main():
+    local_repo_path = "/tmp/vfs"
+    process_pending_file_operations(local_repo_path)
+
 if __name__ == "__main__":
-    source_files = [
-        "/home/user/project/docs/contracts/agreement.pdf",
-        "/home/user/project/docs/specs/design_v2.docx",
-        "/home/user/project/nonexistent.pdf"
-    ]
-    
-    results = bulk_upload_to_azure_storage(
-        source_files=source_files,
-        local_repo_path="/home/user/project",
-        mount_point="/mnt/azure-storage",
-        destination_folder="uploads",
-        max_workers=4
-    )
-    
-    # Example output:
-    """
-    [
-        {
-            "source_file_relative_path": "docs/contracts/agreement.pdf",
-            "original_file_name": "agreement.pdf",
-            "storage_file_name": "agreement_a7b3c9d2.pdf",
-            "storage_blob_path": "/mnt/azure-storage/uploads/agreement_a7b3c9d2.pdf",
-            "upload_status": "success",
-            "error_message": None,
-            "upload_timestamp": "2025-02-10T15:30:45.123456+00:00"
-        },
-        {
-            "source_file_relative_path": None,
-            "original_file_name": "nonexistent.pdf",
-            "storage_file_name": None,
-            "storage_blob_path": None,
-            "upload_status": "fail",
-            "error_message": "Source file not found: [Errno 2] No such file or directory: '/home/user/project/nonexistent.pdf'",
-            "upload_timestamp": None
-        }
-    ]
-    """
+    main()
