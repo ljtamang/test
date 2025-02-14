@@ -9,6 +9,28 @@ spark = SparkSession.builder.appName("FileMetadataSync").getOrCreate()
 FILE_METADATA_TABLE = "target_file_metadata"
 logger = logging.getLogger(__name__)
 
+def get_files_by_status(file_statuses: List[str]) -> List[str]:
+    """
+    Get list of file paths that have the specified status(es)
+    
+    Args:
+        file_statuses: List of file statuses to filter by (e.g. ['pending_upload', 'pending_update'])
+    
+    Returns:
+        List of file relative paths matching the given status(es)
+    """
+    # Create comma-separated string of quoted statuses
+    quoted_statuses = ", ".join(f"'{status}'" for status in file_statuses)
+    status_condition = f"file_status IN ({quoted_statuses})"
+    
+    pending_files = (spark.table(FILE_METADATA_TABLE)
+        .filter(status_condition)
+        .select("file_relative_path")
+        .collect())
+    
+    return [row.file_relative_path for row in pending_files]
+
+
 def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Dict]:
     """
     Placeholder for Azure upload function
