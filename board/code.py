@@ -5,6 +5,7 @@ import logging
 import os
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType
+from delta.tables import DeltaTable
 
 # Global configurations
 spark = SparkSession.builder \
@@ -33,35 +34,20 @@ DELETE_PATH_SCHEMA = StructType([
 ])
 
 def get_standard_time() -> str:
-    """
-    Returns current time in ISO format with UTC timezone
-    
-    Returns:
-        str: Current timestamp in ISO format with UTC timezone
-              Format: YYYY-MM-DDTHH:MM:SS.mmmmmm+00:00
-              Example: 2024-02-14T10:30:15.123456+00:00
-    """
+    """Returns current time in ISO format with UTC timezone"""
     return datetime.now(pytz.UTC).isoformat()
 
 def get_files_by_status(file_statuses: List[str]) -> List[str]:
-    """
-    Retrieve file paths from metadata table matching specified statuses
-    
-    Args:
-        file_statuses: List of status values to filter by 
-                      e.g. ['pending_upload', 'pending_update']
-    
-    Returns:
-        List[str]: List of source_file_relative_paths matching any of the given statuses.
-                  Returns empty list if no files found or if file_statuses is empty.
-    """
+    """Retrieve file paths from metadata table matching specified statuses"""
     if not file_statuses:
         return []
         
     quoted_statuses = ", ".join(f"'{status}'" for status in file_statuses)
     status_condition = f"file_status IN ({quoted_statuses})"
     
-    pending_files = (spark.table(FILE_METADATA_TABLE)
+    # Use DeltaTable to read the table
+    delta_table = DeltaTable.forName(spark, FILE_METADATA_TABLE)
+    pending_files = (delta_table.toDF()
         .filter(status_condition)
         .select("source_file_relative_path")
         .collect())
@@ -69,29 +55,7 @@ def get_files_by_status(file_statuses: List[str]) -> List[str]:
     return [row.source_file_relative_path for row in pending_files]
 
 def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Dict]:
-    """
-    Upload files to Azure storage
-    
-    Args:
-        files_to_upload: List of relative file paths to upload
-        local_repo_path: Base directory path to construct full file paths
-    
-    Returns:
-        List[Dict]: List of result dictionaries, one per file:
-        For success case:
-            {
-                'success': True,
-                'source_file_relative_path': str,
-                'blob_path': str,
-                'timestamp': str (ISO format with UTC timezone)
-            }
-        For failure case:
-            {
-                'success': False,
-                'source_file_relative_path': str,
-                'error_message': str
-            }
-    """
+    """Upload files to Azure storage"""
     results = []
     for file_path in files_to_upload:
         try:
@@ -118,27 +82,7 @@ def upload_to_azure(files_to_upload: List[str], local_repo_path: str) -> List[Di
     return results
 
 def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[Dict]:
-    """
-    Delete files from Azure storage
-    
-    Args:
-        files_to_delete: List of relative file paths to delete
-        local_repo_path: Base directory path to construct full file paths
-    
-    Returns:
-        List[Dict]: List of result dictionaries, one per file:
-        For success case:
-            {
-                'success': True,
-                'source_file_relative_path': str
-            }
-        For failure case:
-            {
-                'success': False,
-                'source_file_relative_path': str,
-                'error_message': str
-            }
-    """
+    """Delete files from Azure storage"""
     results = []
     for file_path in files_to_delete:
         try:
@@ -163,14 +107,12 @@ def delete_from_azure(files_to_delete: List[str], local_repo_path: str) -> List[
     return results
 
 def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
-    """
-    Update metadata table after file upload operations using Delta Lake merge syntax with aliases
-    
-    Args:
-        upload_results: List of upload operation results from upload_to_azure()
-    """
+    """Update metadata table after file upload operations using explicit DeltaTable"""
     if not upload_results:
         return
+
+    # Get DeltaTable instance
+    delta_table = DeltaTable.forName(spark, FILE_METADATA_TABLE)
 
     # Separate successful and failed uploads
     successful_uploads = [(
@@ -198,21 +140,21 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
                 schema=UPLOAD_SUCCESS_SCHEMA
             )
             
-            # Delta Lake merge syntax with aliases
-            (spark.table(FILE_METADATA_TABLE).alias("target")
+            delta_table.alias("target") \
                 .merge(
                     success_df.alias("updates"),
                     "target.source_file_relative_path = updates.source_file_relative_path"
-                )
+                ) \
                 .whenMatchedUpdate(set={
                     "blob_path": "updates.blob_path",
                     "last_upload_on": "to_timestamp(updates.timestamp)",
                     "error_message": "NULL",
                     "etl_updated_at": f"to_timestamp('{get_standard_time()}')"
-                })
-                .execute())
+                }) \
+                .execute()
         except Exception as e:
             logger.error(f"Failed to update metadata for successful uploads: {str(e)}")
+            print(f"Full error details: {str(e)}")
     
     # Update failed uploads
     if failed_uploads:
@@ -222,29 +164,27 @@ def sync_metadata_after_upload(upload_results: List[Dict]) -> None:
                 schema=FAILED_OPERATION_SCHEMA
             )
             
-            # Delta Lake merge syntax with aliases
-            (spark.table(FILE_METADATA_TABLE).alias("target")
+            delta_table.alias("target") \
                 .merge(
                     failed_df.alias("updates"),
                     "target.source_file_relative_path = updates.source_file_relative_path"
-                )
+                ) \
                 .whenMatchedUpdate(set={
                     "error_message": "updates.error_message",
                     "etl_updated_at": f"to_timestamp('{get_standard_time()}')"
-                })
-                .execute())
+                }) \
+                .execute()
         except Exception as e:
             logger.error(f"Failed to update metadata for failed uploads: {str(e)}")
+            print(f"Full error details: {str(e)}")
 
 def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
-    """
-    Update metadata table after file deletion operations using Delta Lake merge syntax with aliases
-    
-    Args:
-        delete_results: List of deletion operation results from delete_from_azure()
-    """
+    """Update metadata table after file deletion operations using explicit DeltaTable"""
     if not delete_results:
         return
+
+    # Get DeltaTable instance
+    delta_table = DeltaTable.forName(spark, FILE_METADATA_TABLE)
 
     # Separate successful and failed deletes
     successful_deletes = [
@@ -271,16 +211,16 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
                 schema=DELETE_PATH_SCHEMA
             )
             
-            # Delta Lake merge syntax with aliases
-            (spark.table(FILE_METADATA_TABLE).alias("target")
+            delta_table.alias("target") \
                 .merge(
                     deletes_df.alias("deletes"),
                     "target.source_file_relative_path = deletes.source_file_relative_path"
-                )
-                .whenMatchedDelete()
-                .execute())
+                ) \
+                .whenMatchedDelete() \
+                .execute()
         except Exception as e:
             logger.error(f"Failed to update metadata for successful deletions: {str(e)}")
+            print(f"Full error details: {str(e)}")
     
     # Update failed deletions
     if failed_deletes:
@@ -290,28 +230,22 @@ def sync_metadata_after_deletion(delete_results: List[Dict]) -> None:
                 schema=FAILED_OPERATION_SCHEMA
             )
             
-            # Delta Lake merge syntax with aliases
-            (spark.table(FILE_METADATA_TABLE).alias("target")
+            delta_table.alias("target") \
                 .merge(
                     failed_df.alias("updates"),
                     "target.source_file_relative_path = updates.source_file_relative_path"
-                )
+                ) \
                 .whenMatchedUpdate(set={
                     "error_message": "updates.error_message",
                     "etl_updated_at": f"to_timestamp('{get_standard_time()}')"
-                })
-                .execute())
+                }) \
+                .execute()
         except Exception as e:
             logger.error(f"Failed to update metadata for failed deletions: {str(e)}")
+            print(f"Full error details: {str(e)}")
 
 def process_pending_file_operations(local_repo_path: str) -> None:
-    """
-    Process all pending file operations and sync metadata table
-    
-    Args:
-        local_repo_path: Base directory path used to construct full file paths
-                        for Azure storage operations
-    """
+    """Process all pending file operations and sync metadata table"""
     try:
         # Get files for upload/update operations
         to_upload = get_files_by_status(['pending_upload', 'pending_update'])
@@ -334,10 +268,19 @@ def process_pending_file_operations(local_repo_path: str) -> None:
         raise
 
 def main() -> None:
-    """
-    Main entry point for the file metadata sync process
-    """
+    """Main entry point for the file metadata sync process"""
     try:
+        # Add verification of Delta Lake setup
+        print("Checking Delta Lake configuration...")
+        print("Spark Version:", spark.version)
+        print("SQL Extensions:", spark.conf.get("spark.sql.extensions", "Not configured"))
+        print("SQL Catalog:", spark.conf.get("spark.sql.catalog.spark_catalog", "Not configured"))
+        
+        # Verify table is Delta format
+        table_format = spark.sql(f"DESCRIBE DETAIL {FILE_METADATA_TABLE}").select("format").first()[0]
+        print("Table format:", table_format)
+        
+        # Continue with main process
         local_repo_path = "/tmp/vfs"
         process_pending_file_operations(local_repo_path)
     except Exception as e:
