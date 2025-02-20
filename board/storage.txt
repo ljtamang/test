@@ -1,3 +1,64 @@
+# Filter the dictionaries to only include the fields in the schema
+filtered_target_files = [
+    {k: v for k, v in file_dict.items() if k in [field.name for field in TARGET_FILES_SCHEMA.fields]}
+    for file_dict in target_files
+]
+
+
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
+from pyspark.sql.functions import lit
+from datetime import datetime
+
+# Initialize Spark session
+spark = SparkSession.builder.appName("example").getOrCreate()
+
+# Example target_files with 6 keys per dictionary
+target_files = [
+    {
+        "file_path": "/path/to/file1.txt",
+        "category": "text",
+        "file_relative_path": "file1.txt",
+        "git_blob_hash": "abc123",
+        "file_name": "file1",
+        "file_extension": "txt"
+    },
+    {
+        "file_path": "/path/to/file2.csv",
+        "category": "data",
+        "file_relative_path": "file2.csv",
+        "git_blob_hash": "def456",
+        "file_name": "file2",
+        "file_extension": "csv"
+    }
+]
+
+# Define schema with only 5 fields (ignoring 'file_extension')
+TARGET_FILES_SCHEMA = StructType([
+    StructField("file_path", StringType(), True),
+    StructField("category", StringType(), True),
+    StructField("file_relative_path", StringType(), True),
+    StructField("git_blob_hash", StringType(), True),
+    StructField("file_name", StringType(), True)
+])
+
+# Current time
+current_time = datetime.now()
+
+# Filter the dictionaries to only include the fields in the schema
+filtered_target_files = [
+    {k: v for k, v in file_dict.items() if k in [field.name for field in TARGET_FILES_SCHEMA.fields]}
+    for file_dict in target_files
+]
+
+# Create DataFrame with filtered data
+target_df = spark.createDataFrame(
+    data=filtered_target_files,
+    schema=TARGET_FILES_SCHEMA
+).withColumn("current_time", lit(current_time).cast(TimestampType()))
+
+# Show results
+target_df.show(truncate=False)
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 from pyspark.sql.functions import col, lit
