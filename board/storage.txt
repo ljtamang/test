@@ -1,69 +1,156 @@
-from pathlib import Path
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
+from pyspark.sql.functions import col, lit
 from typing import List, Dict
+from delta.tables import DeltaTable
+import common_utils  # For get_standarized_timestamp
 
-def enrich(files: List[Dict[str, str]]) -> List[Dict[str, str]]:
+# Define constant for table name at the top
+FILE_METADATA_TABLE = "vfs.target_file_metadata"
+
+# Initialize Spark session outside the function
+spark = SparkSession.builder.getOrCreate()
+
+# Define schema for target_files DataFrame (already enriched)
+TARGET_FILES_SCHEMA = StructType([
+    StructField("file_relative_path", StringType(), False),  # Required
+    StructField("git_blob_hash", StringType(), False),       # Required
+    StructField("category", StringType(), False),            # Required (replaces file_category)
+    StructField("file_name", StringType(), True),            # Provided, nullable
+    StructField("file_extension", StringType(), True)        # Provided, nullable
+])
+
+def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
     """
-    Enrich a list of file dictionaries by adding file_relative_path, git_blob_hash, 
-    file_name, and file_extension while preserving all original fields.
+    Merge target files into the target_file_metadata Delta table using Delta Lake MERGE operation
     
     Args:
-        files: List of dictionaries where each dictionary must contain at least 'file_path'.
-               Other fields are preserved.
+        target_files: List of dictionaries containing file_relative_path, git_blob_hash, 
+                      category, file_name, and file_extension (pre-enriched)
         
     Returns:
-        List of enriched dictionaries with added fields: file_relative_path, git_blob_hash,
-        file_name, and file_extension, plus all original fields.
+        bool: True if merge operation successful, raises exception otherwise
         
-    Raises:
-        KeyError: If any dictionary in the input list lacks 'file_path'.
+    Conditions:
+        1. New File (Insert):
+           - When: file_relative_path in target_files but not in table
+           - Action: Inserts new record with:
+             - file_status = "pending_upload"
+             - etl_created_at = current timestamp from common_utils.get_standarized_timestamp()
+             - etl_updated_at = same current timestamp as etl_created_at
+             - file_relative_path, git_blob_hash, category, file_name, file_extension from target_files
+             - Other fields (error_message, blob_path, last_upload_at, etc.) set to NULL
+        
+        2. Removed File (Update to Pending Delete):
+           - When: file_relative_path in table but not in target_files
+           - Action: Updates record with:
+             - file_status = "pending_delete"
+             - etl_updated_at = current timestamp
+        
+        3. Updated File (Update):
+           - When: file_relative_path in both, but git_blob_hash differs
+           - Action: Updates existing record with:
+             - git_blob_hash = new git_blob_hash
+             - file_status = "pending_update"
+             - etl_updated_at = current timestamp
+             - category, file_name, file_extension remain unchanged
+             
+    Notes:
+        - Prints counts of inserted, updated (pending_update), and deleted records
+        - Records marked 'pending_delete' are updated, not physically deleted
     """
-    enriched_files = []
+    # Get current timestamp as ISO string
+    current_time = common_utils.get_standarized_timestamp()
     
-    for file_dict in files:
-        # Check for required field
-        if 'file_path' not in file_dict:
-            raise KeyError("Each dictionary must contain 'file_path'")
-        
-        # Create a new dictionary starting with all original fields
-        enriched_dict = file_dict.copy()
-        
-        # Extract file_path
-        file_path = file_dict['file_path']
-        path_obj = Path(file_path)
-        
-        # Derive new fields
-        enriched_dict['file_relative_path'] = str(file_path)  # Assuming file_path is relative for now
-        enriched_dict['git_blob_hash'] = None  # Placeholder; update if Git data available
-        enriched_dict['file_name'] = path_obj.name
-        enriched_dict['file_extension'] = path_obj.suffix.lstrip('.') if path_obj.suffix else ''
-        
-        # Add enriched dictionary to the result list
-        enriched_files.append(enriched_dict)
+    # Create DataFrame directly from pre-enriched target_files
+    target_df = spark.createDataFrame(
+        data=target_files,
+        schema=TARGET_FILES_SCHEMA
+    ).withColumn("current_time", col(lit(current_time)).cast(TimestampType()))
     
-    return enriched_files
+    # Get Delta table using constant
+    delta_table = DeltaTable.forName(spark, FILE_METADATA_TABLE)
+    
+    try:
+        # Single MERGE operation handling all three conditions
+        merge_operation = delta_table.alias("target").merge(
+            source=target_df.alias("source"),
+            condition="target.file_relative_path = source.file_relative_path"
+        ).whenMatchedUpdate(
+            condition="target.git_blob_hash != source.git_blob_hash",
+            set={
+                "git_blob_hash": "source.git_blob_hash",
+                "file_status": lit("pending_update"),
+                "etl_updated_at": "source.current_time"
+                # category, file_name, file_extension are intentionally not updated here
+            }
+        ).whenNotMatchedInsert(
+            values={
+                "file_relative_path": "source.file_relative_path",
+                "git_blob_hash": "source.git_blob_hash",
+                "file_status": lit("pending_upload"),
+                "etl_created_at": "source.current_time",  # Set to current timestamp
+                "etl_updated_at": "source.current_time",  # Same as etl_created_at
+                "category": "source.category",            # Set category from target_files
+                "file_name": "source.file_name",          # From pre-enriched target_files
+                "file_extension": "source.file_extension"  # From pre-enriched target_files
+                # error_message, blob_path, last_upload_at, id are left as NULL by default
+            }
+        # Updates records that exist in the target table (vfs.target_file_metadata) 
+        # but are not present in the source (target_files) to 'pending_delete'
+        ).whenNotMatchedBySourceUpdate(
+            set={
+                "file_status": lit("pending_delete"),
+                "etl_updated_at": "source.current_time"
+            }
+        )
+        
+        # Execute the merge and get operation metrics
+        merge_operation.execute()
+        
+        # Get the latest operation metrics from Delta table history
+        history = delta_table.history(1).collect()[0]
+        num_inserted = history["operationMetrics"].get("numTargetRowsInserted", 0)
+        num_updated = history["operationMetrics"].get("numTargetRowsUpdated", 0)
+        num_deleted = history["operationMetrics"].get("numTargetRowsDeleted", 0)
+        
+        # Print the counts
+        # Note: 'pending_delete' and 'pending_update' are counted as updates
+        print(f"Merge operation completed:")
+        print(f" - Files inserted (new with pending_upload): {num_inserted}")
+        print(f" - Files updated (pending_update or pending_delete): {num_updated}")
+        print(f" - Files deleted: {num_deleted}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error during merge operation: {str(e)}")
+        raise
 
 # Example usage
 def main():
-    # Sample input files
-    input_files: List[Dict[str, str]] = [
+    # Sample pre-enriched target files with category
+    target_files: List[Dict[str, str]] = [
         {
-            'file_path': 'path/to/file1.txt',
+            'file_relative_path': 'path/to/file1.txt',
+            'git_blob_hash': 'abc123',
             'category': 'docs',
-            'size': '1024'
+            'file_name': 'file1.txt',
+            'file_extension': 'txt'
         },
         {
-            'file_path': 'path/to/file2.py',
+            'file_relative_path': 'path/to/file2.py',
+            'git_blob_hash': 'def456',
             'category': 'scripts',
-            'owner': 'user1'
+            'file_name': 'file2.py',
+            'file_extension': 'py'
         }
     ]
     
-    # Enrich the files
-    enriched_files = enrich(input_files)
-    
-    # Print results
-    for file in enriched_files:
-        print(file)
+    # Execute merge
+    success = merge_target_file_metadata(target_files)
+    if success:
+        print("Merge completed successfully")
 
 if __name__ == "__main__":
     main()
