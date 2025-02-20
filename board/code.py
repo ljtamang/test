@@ -1,5 +1,6 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
+from pyspark.sql.functions import col
 from typing import List, Dict
 from delta.tables import DeltaTable
 from common_utils import get_standarized_timestamp
@@ -52,11 +53,11 @@ def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
     # Get current timestamp as ISO string
     current_time = get_standarized_timestamp()
     
-    # Create DataFrame from target_files
+    # Create DataFrame from target_files and cast current_time to TIMESTAMP
     target_df = spark.createDataFrame(
         data=target_files,
         schema=TARGET_FILES_SCHEMA
-    ).withColumn("current_time", lit(current_time))
+    ).withColumn("current_time", col(lit(current_time)).cast(TimestampType()))
     
     # Get Delta table using constant
     delta_table = DeltaTable.forName(spark, FILE_METADATA_TABLE)
