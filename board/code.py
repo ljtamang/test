@@ -16,9 +16,9 @@ TARGET_FILES_SCHEMA = StructType([
     StructField("git_blob_hash", StringType(), False)
 ])
 
-def merge_target_files(target_files: List[Dict[str, str]]) -> bool:
+def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
     """
-    Merge target files with existing Delta table using Delta Lake MERGE operation
+    Merge target files into the target_file_metadata Delta table using Delta Lake MERGE operation
     
     Args:
         target_files: List of dictionaries containing file_relative_path and git_blob_hash
@@ -116,7 +116,7 @@ def main():
     ]
     
     # Execute merge
-    success = merge_target_files(target_files)
+    success = merge_target_file_metadata(target_files)
     if success:
         print("Merge completed successfully")
 
