@@ -1,11 +1,69 @@
-print(spark.conf.get("spark.jars.packages"))  # Should show delta lake version
+from pathlib import Path
+from typing import List, Dict
 
-from delta.tables import DeltaTable
+def enrich(files: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """
+    Enrich a list of file dictionaries by adding file_relative_path, git_blob_hash, 
+    file_name, and file_extension while preserving all original fields.
+    
+    Args:
+        files: List of dictionaries where each dictionary must contain at least 'file_path'.
+               Other fields are preserved.
+        
+    Returns:
+        List of enriched dictionaries with added fields: file_relative_path, git_blob_hash,
+        file_name, and file_extension, plus all original fields.
+        
+    Raises:
+        KeyError: If any dictionary in the input list lacks 'file_path'.
+    """
+    enriched_files = []
+    
+    for file_dict in files:
+        # Check for required field
+        if 'file_path' not in file_dict:
+            raise KeyError("Each dictionary must contain 'file_path'")
+        
+        # Create a new dictionary starting with all original fields
+        enriched_dict = file_dict.copy()
+        
+        # Extract file_path
+        file_path = file_dict['file_path']
+        path_obj = Path(file_path)
+        
+        # Derive new fields
+        enriched_dict['file_relative_path'] = str(file_path)  # Assuming file_path is relative for now
+        enriched_dict['git_blob_hash'] = None  # Placeholder; update if Git data available
+        enriched_dict['file_name'] = path_obj.name
+        enriched_dict['file_extension'] = path_obj.suffix.lstrip('.') if path_obj.suffix else ''
+        
+        # Add enriched dictionary to the result list
+        enriched_files.append(enriched_dict)
+    
+    return enriched_files
 
+# Example usage
+def main():
+    # Sample input files
+    input_files: List[Dict[str, str]] = [
+        {
+            'file_path': 'path/to/file1.txt',
+            'category': 'docs',
+            'size': '1024'
+        },
+        {
+            'file_path': 'path/to/file2.py',
+            'category': 'scripts',
+            'owner': 'user1'
+        }
+    ]
+    
+    # Enrich the files
+    enriched_files = enrich(input_files)
+    
+    # Print results
+    for file in enriched_files:
+        print(file)
 
-spark = SparkSession.builder \
-    .appName("FileMetadataSync") \
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-    .config("spark.jars.packages", "io.delta:delta-core_2.12:3.0.0") \  # Add this line
-    .getOrCreate()
+if __name__ == "__main__":
+    main()
