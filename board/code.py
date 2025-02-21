@@ -1,3 +1,20 @@
+
+# Example 1: Get only file paths for pending delete files
+file_paths = get_files_by_status(['pending_delete'])
+print("Example 1 - File paths:", file_paths)
+# Output: ['file/path1.txt', 'file/path2.txt']
+
+# Example 2: Get blob paths for multiple statuses
+blob_paths = get_files_by_status(['pending_delete', 'pending_update'], cols='blob_path')
+print("Example 2 - Blob paths:", blob_paths)
+# Output: ['blob/path1', 'blob/path2']
+
+# Example 3: Get multiple columns
+records = get_files_by_status(
+    ['pending_delete'], 
+    cols=['file_relative_path', 'file_status', 'blob_path']
+)
+
 from pyspark.sql.functions import col
 
 def get_files_by_status(status_list, cols=None):
