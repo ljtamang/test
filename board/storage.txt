@@ -3,7 +3,7 @@ from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 from pyspark.sql.functions import col, lit, to_timestamp
 from typing import List, Dict
 from delta.tables import DeltaTable
-import common_utils  # For get_standarized_timestamp
+import common_utils  # For get_standardized_timestamp
 
 # Define constant for table name at the top
 FILE_METADATA_TABLE = "vfs.target_file_metadata"
@@ -49,11 +49,11 @@ def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
     Additional Info:
         - Uses standardized timestamp from common_utils for all datetime fields
         - Optional fields (blob_path, last_upload_at, error_message) default to NULL
-        - Prints operation metrics after successful merge
+        - Prints detailed operation metrics after successful merge
     """
     try:
         # Get current timestamp
-        timestamp_str = common_utils.get_standarized_timestamp()
+        timestamp_str = common_utils.get_standardized_timestamp()
         timestamp_val = to_timestamp(lit(timestamp_str))
         
         # Create DataFrame from target_files
@@ -61,6 +61,12 @@ def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
         
         # Get Delta table
         delta_table = DeltaTable.forName(spark, FILE_METADATA_TABLE)
+        
+        # Get initial counts for calculating updates later
+        initial_counts = {
+            'pending_update': delta_table.toDF().filter("file_status = 'pending_update'").count(),
+            'pending_delete': delta_table.toDF().filter("file_status = 'pending_delete'").count()
+        }
         
         # Execute merge operation
         merge_operation = delta_table.alias("target").merge(
@@ -94,16 +100,24 @@ def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
         # Execute the merge
         merge_operation.execute()
         
-        # Get operation metrics
+        # Get final counts to calculate differences
+        final_counts = {
+            'pending_update': delta_table.toDF().filter("file_status = 'pending_update'").count(),
+            'pending_delete': delta_table.toDF().filter("file_status = 'pending_delete'").count()
+        }
+        
+        # Calculate changes
+        num_pending_update = final_counts['pending_update'] - initial_counts['pending_update']
+        num_pending_delete = final_counts['pending_delete'] - initial_counts['pending_delete']
+        
+        # Get inserted count from operation metrics
         history = delta_table.history(1).collect()[0]
         num_inserted = history["operationMetrics"].get("numTargetRowsInserted", 0)
-        num_updated = history["operationMetrics"].get("numTargetRowsUpdated", 0)
-        num_deleted = history["operationMetrics"].get("numTargetRowsDeleted", 0)
         
-        print(f"Merge operation completed:")
+        print(f"\nMerge operation completed:")
         print(f" - Files inserted (pending_upload): {num_inserted}")
-        print(f" - Files updated (pending_update/delete): {num_updated}")
-        print(f" - Files deleted: {num_deleted}")
+        print(f" - Files updated (pending_update): {num_pending_update}")
+        print(f" - Files marked for deletion (pending_delete): {num_pending_delete}")
         
         return True
         
