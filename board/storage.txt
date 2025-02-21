@@ -1,67 +1,6 @@
-# Filter the dictionaries to only include the fields in the schema
-filtered_target_files = [
-    {k: v for k, v in file_dict.items() if k in [field.name for field in TARGET_FILES_SCHEMA.fields]}
-    for file_dict in target_files
-]
-
-
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import lit
-from datetime import datetime
-
-# Initialize Spark session
-spark = SparkSession.builder.appName("example").getOrCreate()
-
-# Example target_files with 6 keys per dictionary
-target_files = [
-    {
-        "file_path": "/path/to/file1.txt",
-        "category": "text",
-        "file_relative_path": "file1.txt",
-        "git_blob_hash": "abc123",
-        "file_name": "file1",
-        "file_extension": "txt"
-    },
-    {
-        "file_path": "/path/to/file2.csv",
-        "category": "data",
-        "file_relative_path": "file2.csv",
-        "git_blob_hash": "def456",
-        "file_name": "file2",
-        "file_extension": "csv"
-    }
-]
-
-# Define schema with only 5 fields (ignoring 'file_extension')
-TARGET_FILES_SCHEMA = StructType([
-    StructField("file_path", StringType(), True),
-    StructField("category", StringType(), True),
-    StructField("file_relative_path", StringType(), True),
-    StructField("git_blob_hash", StringType(), True),
-    StructField("file_name", StringType(), True)
-])
-
-# Current time
-current_time = datetime.now()
-
-# Filter the dictionaries to only include the fields in the schema
-filtered_target_files = [
-    {k: v for k, v in file_dict.items() if k in [field.name for field in TARGET_FILES_SCHEMA.fields]}
-    for file_dict in target_files
-]
-
-# Create DataFrame with filtered data
-target_df = spark.createDataFrame(
-    data=filtered_target_files,
-    schema=TARGET_FILES_SCHEMA
-).withColumn("current_time", lit(current_time).cast(TimestampType()))
-
-# Show results
-target_df.show(truncate=False)
-from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-from pyspark.sql.functions import col, lit
+from pyspark.sql.functions import col, lit, to_timestamp
 from typing import List, Dict
 from delta.tables import DeltaTable
 import common_utils  # For get_standarized_timestamp
@@ -72,68 +11,34 @@ FILE_METADATA_TABLE = "vfs.target_file_metadata"
 # Initialize Spark session outside the function
 spark = SparkSession.builder.getOrCreate()
 
-# Define schema for target_files DataFrame (already enriched)
+# Define schema for target_files DataFrame - without file_path
 TARGET_FILES_SCHEMA = StructType([
-    StructField("file_relative_path", StringType(), False),  # Required
-    StructField("git_blob_hash", StringType(), False),       # Required
-    StructField("category", StringType(), False),            # Required (replaces file_category)
-    StructField("file_name", StringType(), True),            # Provided, nullable
-    StructField("file_extension", StringType(), True)        # Provided, nullable
+    StructField("file_relative_path", StringType(), False),
+    StructField("git_blob_hash", StringType(), False),
+    StructField("category", StringType(), False),
+    StructField("file_name", StringType(), True),
+    StructField("file_extension", StringType(), True)
 ])
 
 def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
     """
     Merge target files into the target_file_metadata Delta table using Delta Lake MERGE operation
-    
-    Args:
-        target_files: List of dictionaries containing file_relative_path, git_blob_hash, 
-                      category, file_name, and file_extension (pre-enriched)
-        
-    Returns:
-        bool: True if merge operation successful, raises exception otherwise
-        
-    Conditions:
-        1. New File (Insert):
-           - When: file_relative_path in target_files but not in table
-           - Action: Inserts new record with:
-             - file_status = "pending_upload"
-             - etl_created_at = current timestamp from common_utils.get_standarized_timestamp()
-             - etl_updated_at = same current timestamp as etl_created_at
-             - file_relative_path, git_blob_hash, category, file_name, file_extension from target_files
-             - Other fields (error_message, blob_path, last_upload_at, etc.) set to NULL
-        
-        2. Removed File (Update to Pending Delete):
-           - When: file_relative_path in table but not in target_files
-           - Action: Updates record with:
-             - file_status = "pending_delete"
-             - etl_updated_at = current timestamp
-        
-        3. Updated File (Update):
-           - When: file_relative_path in both, but git_blob_hash differs
-           - Action: Updates existing record with:
-             - git_blob_hash = new git_blob_hash
-             - file_status = "pending_update"
-             - etl_updated_at = current timestamp
-             - category, file_name, file_extension remain unchanged
-             
-    Notes:
-        - Prints counts of inserted, updated (pending_update), and deleted records
-        - Records marked 'pending_delete' are updated, not physically deleted
     """
-    # Get current timestamp as ISO string
-    current_time = common_utils.get_standarized_timestamp()
-    
-    # Create DataFrame directly from pre-enriched target_files
-    target_df = spark.createDataFrame(
-        data=target_files,
-        schema=TARGET_FILES_SCHEMA
-    ).withColumn("current_time", col(lit(current_time)).cast(TimestampType()))
-    
-    # Get Delta table using constant
-    delta_table = DeltaTable.forName(spark, FILE_METADATA_TABLE)
-    
     try:
-        # Single MERGE operation handling all three conditions
+        # Get current timestamp as ISO string
+        current_time = common_utils.get_standarized_timestamp()
+        current_time = to_timestamp(lit(current_time))
+        
+        # Create DataFrame from target_files - will ignore file_path if present
+        target_df = spark.createDataFrame(target_files, schema=TARGET_FILES_SCHEMA)
+        
+        # Add current_time column
+        target_df = target_df.withColumn("current_time", current_time)
+        
+        # Get Delta table
+        delta_table = DeltaTable.forName(spark, FILE_METADATA_TABLE)
+        
+        # Execute merge operation
         merge_operation = delta_table.alias("target").merge(
             source=target_df.alias("source"),
             condition="target.file_relative_path = source.file_relative_path"
@@ -143,43 +48,37 @@ def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
                 "git_blob_hash": "source.git_blob_hash",
                 "file_status": lit("pending_update"),
                 "etl_updated_at": "source.current_time"
-                # category, file_name, file_extension are intentionally not updated here
             }
         ).whenNotMatchedInsert(
             values={
                 "file_relative_path": "source.file_relative_path",
                 "git_blob_hash": "source.git_blob_hash",
                 "file_status": lit("pending_upload"),
-                "etl_created_at": "source.current_time",  # Set to current timestamp
-                "etl_updated_at": "source.current_time",  # Same as etl_created_at
-                "category": "source.category",            # Set category from target_files
-                "file_name": "source.file_name",          # From pre-enriched target_files
-                "file_extension": "source.file_extension"  # From pre-enriched target_files
-                # error_message, blob_path, last_upload_at, id are left as NULL by default
+                "etl_created_at": "source.current_time",
+                "etl_updated_at": "source.current_time",
+                "category": "source.category",
+                "file_name": "source.file_name",
+                "file_extension": "source.file_extension"
             }
-        # Updates records that exist in the target table (vfs.target_file_metadata) 
-        # but are not present in the source (target_files) to 'pending_delete'
-        ).whenNotMatchedBySourceUpdate(
+        ).whenNotMatchedBySource(
             set={
                 "file_status": lit("pending_delete"),
                 "etl_updated_at": "source.current_time"
             }
         )
         
-        # Execute the merge and get operation metrics
+        # Execute the merge
         merge_operation.execute()
         
-        # Get the latest operation metrics from Delta table history
+        # Get operation metrics
         history = delta_table.history(1).collect()[0]
         num_inserted = history["operationMetrics"].get("numTargetRowsInserted", 0)
         num_updated = history["operationMetrics"].get("numTargetRowsUpdated", 0)
         num_deleted = history["operationMetrics"].get("numTargetRowsDeleted", 0)
         
-        # Print the counts
-        # Note: 'pending_delete' and 'pending_update' are counted as updates
         print(f"Merge operation completed:")
-        print(f" - Files inserted (new with pending_upload): {num_inserted}")
-        print(f" - Files updated (pending_update or pending_delete): {num_updated}")
+        print(f" - Files inserted (pending_upload): {num_inserted}")
+        print(f" - Files updated (pending_update/delete): {num_updated}")
         print(f" - Files deleted: {num_deleted}")
         
         return True
@@ -190,16 +89,18 @@ def merge_target_file_metadata(target_files: List[Dict[str, str]]) -> bool:
 
 # Example usage
 def main():
-    # Sample pre-enriched target files with category
-    target_files: List[Dict[str, str]] = [
+    # Example target_files - file_path will be ignored by schema
+    target_files = [
         {
+            'file_path': 'base/path/path/to/file1.txt',  # This will be ignored
             'file_relative_path': 'path/to/file1.txt',
-            'git_blob_hash': 'abc123',
-            'category': 'docs',
+            'git_blob_hash': 'xyz789',
+            'category': 'new_docs',
             'file_name': 'file1.txt',
             'file_extension': 'txt'
         },
         {
+            'file_path': 'base/path/path/to/file2.py',  # This will be ignored
             'file_relative_path': 'path/to/file2.py',
             'git_blob_hash': 'def456',
             'category': 'scripts',
@@ -208,10 +109,6 @@ def main():
         }
     ]
     
-    # Execute merge
     success = merge_target_file_metadata(target_files)
     if success:
         print("Merge completed successfully")
-
-if __name__ == "__main__":
-    main()
