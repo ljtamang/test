@@ -1,1 +1,14 @@
+Subject: Clarification on Codespaces Access Policy
 
+Hello IT Team,
+
+When attempting to use Codespaces with [REPO NAME], I encounter:
+"Codespace access limited. An unexpected error occurred."
+
+Could you please:
+
+1. Confirm if Codespaces are enabled for my role?
+2. Share any policy documentation?
+3. Advise on approved development alternatives?
+
+Thank you for your assistance.
