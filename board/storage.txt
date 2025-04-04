@@ -2,7 +2,11 @@ SELECT
   category AS doc_type,
   CONCAT(
     'https://github.com/department-of-veterans-affairs/va.gov-team/blob/master/',
-    file_relative_path
+    TRIM(LEADING '/' FROM file_relative_path)
   ) AS file_path
 FROM 
   vfs_raw.target_file_metadata
+WHERE 
+  category IN ('research_plan', 'research_findings')
+ORDER BY 
+  doc_type  -- This sorts by the output alias
