@@ -4,19 +4,19 @@ SELECT
     file_relative_path, 
     'products/([^/]+)', 
     1
-  ) AS "PRODUCT NAME",
+  ) AS product_name,  -- Changed to underscore
   
-  -- Display relative path but make it a clickable URL in Excel
-  file_relative_path AS "QUICK link to Research Plan",
+  -- Display relative path (will convert to hyperlink in Excel)
+  file_relative_path AS quick_link_to_research_plan,
   
-  -- Hidden column with full URL (for Excel hyperlink formula)
+  -- Full URL for hyperlinking
   CONCAT(
     'https://github.com/department-of-veterans-affairs/va.gov-team/blob/master/',
     TRIM(LEADING '/' FROM file_relative_path)
-  ) AS "hidden_url"
+  ) AS hidden_url
 FROM 
   vfs_raw.target_file_metadata
 WHERE 
   category = 'research_plan'
 ORDER BY 
-  "PRODUCT NAME"
+  product_name
