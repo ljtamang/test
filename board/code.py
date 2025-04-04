@@ -1,577 +1,317 @@
-from typing import List, Dict, Any, Optional
 from pathlib import Path
-import os
-from datetime import datetime
+from typing import Dict, Any, List, Optional
 import re
+import os
+from collections import defaultdict
+
+# Configuration constants
+MIN_CONTENT_LENGTH = 20  # Minimum words to consider for valid content
+MIN_PLAN_SCORE = 5       # Minimum score to classify as research plan
+MIN_FINDINGS_SCORE = 6   # Minimum score to classify as research findings
+MIN_GUIDE_SCORE = 5      # Minimum score to classify as conversation guide
+
+# Caching dictionaries
+content_cache = {}       # Cache for file contents to avoid repeated reads
+stats = defaultdict(int) # Statistics counter for various operations
 
 def normalize_filename(filename: str) -> str:
     """
-    Normalizes filename for consistent checking:
-    - Converts to lowercase
-    - Removes file extension
-    - Replaces special characters and spaces with underscore
-    - Removes multiple underscores
+    Normalize filename to a consistent format for comparison.
+    
+    Converts to lowercase, removes hyphens and underscores, and normalizes spaces.
     
     Args:
-        filename: Original filename
+        filename: Input filename to be normalized
         
     Returns:
-        Normalized filename
+        Normalized filename string
     """
-    # Remove extension and convert to lowercase
-    filename = Path(filename).stem.lower()
-    
-    # Replace special characters and spaces with underscore
-    filename = re.sub(r'[^a-z0-9]', '_', filename)
-    
-    # Remove multiple underscores
-    filename = re.sub(r'_+', '_', filename)
-    
-    # Remove leading/trailing underscores
-    filename = filename.strip('_')
-    
-    return filename
+    normalized = filename.lower()
+    normalized = normalized.replace('-', '').replace('_', ' ')
+    normalized = ' '.join(normalized.split())
+    return normalized
 
 def read_file_content(file_path: str) -> Optional[str]:
     """
-    Reads content of a file. Implementation depends on file type.
+    Read content from a local file with caching.
     
     Args:
-        file_path: Path to the file
+        file_path: Path to the file to read
         
     Returns:
-        String content of file if successful, None if reading fails
+        Content of the file as string if successful, None if reading fails
     """
+    if file_path in content_cache:
+        return content_cache[file_path]
+    
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read().lower()
-    except:
+            content = f.read()
+            content_cache[file_path] = content
+            return content
+    except Exception as e:
+        print(f"Failed to read {file_path}: {e}")
         return None
 
-def tag_as_research_plan(file_path: str, min_threshold: int = 4) -> Dict[str, Any]:
+def is_valid_content(content: str) -> bool:
     """
-    Tags files as research plans based on specific scoring criteria:
-    - Minimum score needed for classification (default: 4)
-    - -8 penalty for certain keywords
-    - Priority keywords get additional points
-    - Scores based on filename, content, and path matches
+    Check if content meets minimum requirements for processing.
     
     Args:
-        file_path: Path to the file
-        min_threshold: Minimum score needed for classification (default: 4)
+        content: Text content to validate
         
     Returns:
-        Dictionary with tag and score if classified as research plan,
-        empty dictionary otherwise
+        True if content is valid (non-empty and meets minimum length), False otherwise
     """
-    score = 0
-    
-    # 1. Initialize keyword lists
-    penalty_keywords = {'guide', 'findings', 'finding', 'report', 'summary', 'research findings', 
-                      'key findings', 'details of findings', 'conversation', 'convo', 'interview'}
-    
-    filename_keywords = [
-        # Priority keywords (first 13) - highly confident indicators of research plans
-        'research-plan', 'research_plan', 'researchplan', 'research plan', 'uat-plan',
-        'research_plan_', 'research-plan-', 'researchplan_', 'uat_plan', 'research-brief',
-        'uat-research-plan', 'researchplan-', 'research_plan_template',
-        # Regular keywords - likely indicators of research plans, but less certain
-        'research_brief', 'uat_research_plan', 'site-search-research-plan', 'wizard-research-plan', 
-        'usability-research-plan', 'discovery-research-plan', 'pre-integration-research-plan', 
-        'user-research-plan'
-    ]
-    
-    # Research plan exact filename patterns without considering file extension
-    research_plan_exact_name_patterns = [
-        'research-plan', 'research_plan', 'researchplan', 'research plan',
-        'ResearchPlan', 'Research-Plan', 'Research_Plan', 'Research Plan'
-    ]
-    
-    # Additional significant boost if the filename without extension is an exact match
-    filename_without_ext = Path(file_path).stem
-    if filename_without_ext in research_plan_exact_name_patterns:
-        score += 12  # Very strong indicator (increased weight)
-    
-    content_keywords = [
-        # Priority keywords (first 10) - unique to research plans
-        'research plan for', '# research plan', 'recruitment criteria', 'recruitment approach', 
-        'primary criteria', 'timeline', 'availability', 'research sessions',
-        'research goals and questions', 'method of research', 'hypothesis',
-        # Regular keywords - may appear in other docs but still relevant
-        'usability', 'research materials', 'methodology', 'participant recruiting', 
-        'length of sessions', 'team roles', 'octo priorities', 'veteran journey', 
-        'research questions', 'prepare', 'screener questions'
-    ]
-    priority_content_keywords = set(content_keywords[:11])
-    
-    path_keywords = {
-        'research', 'study', 'analysis', 'discovery',
-        'usability', 'testing', 'uat'
-    }
-    
-    # 2. Check filename
-    filename = normalize_filename(Path(file_path).name)
-    
-    # Special case: files like "plan1.txt", "plan2.txt" that are research plans
-    if filename.startswith('plan'):
-        score += 5  # Give some points for having "plan" in the filename
-    
-    # Check for penalty keywords first
-    for keyword in penalty_keywords:
-        if keyword in filename:
-            score -= 8
-            break  # Stop checking other penalty keywords once one is found
-    
-    # Special case: if the filename literally contains "research-plan" or "research_plan"
-    if "research-plan" in filename or "research_plan" in filename or "researchplan" in filename:
-        score += 7  # Strong indicator this is a research plan (increased weight)
-    
-    # Check for patterns that strongly indicate this IS a research plan
-    if any(pattern in filename for pattern in filename_keywords[:13]):
-        score += 10  # High confidence patterns get a significant boost (increased weight)
-    elif any(pattern in filename for pattern in filename_keywords[13:]):
-        score += 4  # Regular confidence patterns get a moderate boost (increased weight)
-    
-    # 3. Check content keywords
-    content = read_file_content(file_path)
-    if content is not None:
-        # Check for section headers that are common in research plans
-        plan_section_headers = [
-            "## background", "## research goals", "## methodology", 
-            "## recruitment", "## timeline", "## team roles",
-            "# research plan", "# research plan for", "## research materials",
-            "## recruitment criteria", "## availability", "## method",
-            "## hypothesis", "## research goals and questions"
-        ]
-        
-        # Conversation guide section headers - not declared earlier, need to define
-        guide_section_headers = [
-            "# conversation guide", "## warm-up questions", "## interview questions",
-            "## task completion", "## post-task interview", "## thank you and closing"
-        ]
-        
-        # Content keyword patterns to avoid - terms strongly associated with non-plan documents
-        content_patterns_to_penalize = [
-            '# research findings', '# findings', '# conversation guide', 'research findings',
-            'key findings', 'details of findings', 'participant comments', 
-            'moderator logistics', 'emergency exit', 'warm-up questions',
-            'post-task interview', 'thank-you and closing'
-        ]
-        
-        # Penalize if findings or guide content patterns are found
-        for pattern in content_patterns_to_penalize:
-            if pattern.lower() in content.lower():
-                score -= 5  # Strong indicator this is not a research plan
-                break
-                
-        # Bonus for plan headers
-        for header in plan_section_headers:
-            if header.lower() in content.lower():
-                score += 2  # Strong indicator of a research plan
-                break
-                
-        # Check if "conversation guide" is in the title or if the content has conversation guide indicators
-        if "# conversation guide" in content.lower() or any(header.lower() in content.lower() for header in guide_section_headers):
-            score -= 10  # Strong indicator this is a conversation guide, not a research plan
-            
-        # Check if specific content patterns distinctive to research plans are present
-        if "research plan for" in content.lower():
-            score += 5  # Very strong indicator of a research plan
-            
-        if "## outcome" in content.lower() and "## hypothesis" in content.lower():
-            score += 3  # Strong combination unique to research plans
-        
-        # Check for other important plan indicators in content
-        if ("# research plan" in content.lower() or "research plan for" in content.lower() or 
-            ("background" in content.lower() and "methodology" in content.lower()) or
-            ("research goals" in content.lower() and "recruitment" in content.lower())):
-            score += 10  # Very strong content indicators
-        
-        # First check priority content keywords (with increased weight)
-        for keyword in priority_content_keywords:
-            if keyword.lower() in content.lower():
-                score += 4  # +4 for priority content keyword (increased weight)
-                break  # Stop after first match
-        else:
-            # Only check regular content keywords if no priority keyword was found
-            for keyword in content_keywords[11:]:
-                if keyword.lower() in content.lower():
-                    score += 2  # +2 for regular content keyword (increased weight)
-                    break  # Stop after first match
-    
-    # 4. Check path keywords with reduced weight
-    path_str = normalize_filename(str(Path(file_path).parent))
-    path_matches = set(keyword for keyword in path_keywords if keyword in path_str)
-    # Add just +1 point if any path keyword matches, regardless of how many
-    if path_matches:
-        score += 1  # +1 total for any path match
-    
-    # Special case: check for research/plan in path
-    if "research" in path_str and "plan" in path_str:
-        score += 3  # Strong indicator this is a research plan
-    
-    # 5. Return tag if score meets threshold
-    if score >= min_threshold:
-        return {
-            'tag': 'research_plan',
-            'score': score
-        }
-    
-    return {}  # Empty dictionary is returned when threshold isn't met
+    return content and len(content.split()) >= MIN_CONTENT_LENGTH
 
-def tag_as_research_findings(file_path: str, min_threshold: int = 4) -> Dict[str, Any]:
+def tag_as_research_plan(file_path: str, min_threshold: int = MIN_PLAN_SCORE) -> Optional[Dict[str, Any]]:
     """
-    Tags files as research findings based on specific scoring criteria:
-    - Minimum score needed for classification (default: 4)
-    - -8 penalty for certain keywords
-    - Priority keywords get additional points
-    - Scores based on filename, content, and path matches
+    Determine if a file should be classified as a research plan document.
+    
+    Uses filename patterns, content analysis, and path analysis to calculate
+    a classification score. Returns classification if score meets threshold.
     
     Args:
-        file_path: Path to the file
-        min_threshold: Minimum score needed for classification (default: 4)
+        file_path: Path to the file to evaluate
+        min_threshold: Minimum score required for classification (default: MIN_PLAN_SCORE)
         
     Returns:
-        Dictionary with tag and score if classified as research finding,
-        empty dictionary otherwise
+        Dictionary with 'tag' and 'score' if classified as research plan,
+        None if score is below threshold
     """
+    penalty_keywords = {'guide', 'findings', 'report', 'summary'}
+    priority_keywords = [
+        'researchplan', 'research plan', 
+        'uatplan', 'researchplan'
+    ]
+    
+    filename = normalize_filename(Path(file_path).stem)
     score = 0
     
-    # 1. Initialize keyword lists
-    penalty_keywords = {'plan', 'guide', 'readme', 'conversation-guide', 'convo-guide', 'moderator'}
-    
-    filename_keywords = [
-        # Priority keywords - highly confident indicators of research findings
-        'research-findings', 'research_findings', 'researchfindings', 'research findings',
-        'findings', 'result', 'results', 'observation', 'observations',
-        'research-report', 'research_report', 'research report', 'research-readout',
-        # Regular keywords - likely indicators of research findings, but less certain
-        'analysis', 'evaluation', 'assessment', 'measurement', 'report',
-        'outcome', 'data', 'summary', 'investigation', 'review', 'synthesis'
-    ]
-    priority_keywords = set(filename_keywords[:13])
-    
-    # Findings exact filename patterns without considering file extension
-    findings_exact_name_patterns = [
-        'research-findings', 'research_findings', 'researchfindings', 'research findings',
-        'ResearchFindings', 'Research-Findings', 'Research_Findings', 'Research Findings',
-        'findings', 'Findings', 'research-report', 'research-readout'
-    ]
-    
-    content_keywords = [
-        # Priority keywords for research findings
-        'key findings', 'research findings', 'hypotheses and conclusions', 
-        'recommendations', 'results', 'details of findings', 'participant comments',
-        'observed', 'measured', 'evaluated', 'concluded', 'observation',
-        # Regular keywords
-        'data', 'research', 'study', 'experiment', 'investigation',
-        'assessment', 'measurement', 'evaluation'
-    ]
-    priority_content_keywords = set(content_keywords[:12])
-    
-    path_keywords = {
-        'research', 'findings', 'results', 'study', 'analysis',
-        'experiments', 'observations', 'data'
-    }
-    
-    # 2. Check filename
-    filename = normalize_filename(Path(file_path).name)
-    
-    # Special case: If the filename is simply "findings1.txt" or similar
-    if filename.startswith('findings'):
-        score += 5  # Give some points for having "findings" in the filename
-    
-    # Check for penalty keywords first
-    for keyword in penalty_keywords:
-        if keyword in filename:
+    # Penalty check
+    for kw in penalty_keywords:
+        if kw in filename:
             score -= 8
-            break  # Stop checking other penalty keywords once one is found
+            break
     
-    # Check filename keywords (with increased weight)
-    # First check priority keywords
-    for keyword in priority_keywords:
-        if keyword in filename:
-            score += 10  # +10 for priority keyword in filename (increased weight)
-            break  # Stop after first match
-    else:
-        # Only check regular keywords if no priority keyword was found
-        for keyword in filename_keywords[13:]:
-            if keyword in filename:
-                score += 4  # +4 for regular keyword (increased weight)
-                break  # Stop after first match
+    # Priority filename patterns
+    if any(p in filename for p in priority_keywords):
+        score += 10
     
-    # Additional significant boost if the filename without extension is an exact match
-    filename_without_ext = Path(file_path).stem
-    if filename_without_ext in findings_exact_name_patterns:
-        score += 12  # Very strong indicator
-    
-    # 3. Check content keywords
+    # Content analysis
     content = read_file_content(file_path)
-    if content is not None:
+    if content and is_valid_content(content):
         content_lower = content.lower()
         
-        # Check for section headers that are common in findings
-        findings_section_headers = [
-            "# research findings", "## research findings", 
-            "# key findings", "## key findings",
-            "# findings", "## findings",
-            "# recommendations", "## recommendations",
-            "# results", "## results"
+        # Penalize findings/guide content
+        if any(kw in content_lower for kw in ['# findings', '# conversation guide']):
+            score -= 5
+        
+        # Reward plan content
+        plan_headers = [
+            "## background", "## research goals", "## methodology", 
+            "## recruitment", "## timeline", "## team roles"
         ]
-        
-        # Content keyword patterns to avoid - terms strongly associated with non-findings documents
-        content_patterns_to_penalize = [
-            '# research plan', 'recruitment criteria', 'timeline',
-            '# conversation guide', 'moderator logistics', 'warm-up questions'
-        ]
-        
-        # Penalize if plan or guide content patterns are found
-        for pattern in content_patterns_to_penalize:
-            if pattern.lower() in content_lower:
-                score -= 8  # Strong indicator this is not a findings document
+        for header in plan_headers:
+            if header in content_lower:
+                score += 2
                 break
-                
-        # Bonus for findings headers
-        for header in findings_section_headers:
-            if header.lower() in content_lower:
-                score += 8  # Strong indicator of a findings document
-                break
-                
-        # Look for findings-specific structural patterns
-        if (("key findings" in content_lower and "recommendations" in content_lower) or
-            ("findings" in content_lower and "recommendations" in content_lower) or
-            ("hypotheses and conclusions" in content_lower)):
-            score += 6  # Strong structural indicator of findings
         
-        # First check priority content keywords
-        for keyword in priority_content_keywords:
-            if keyword.lower() in content_lower:
-                score += 4  # +4 for priority content keyword
-                break  # Stop after first match
-        else:
-            # Only check regular content keywords if no priority keyword was found
-            for keyword in content_keywords[12:]:
-                if keyword.lower() in content_lower:
-                    score += 2  # +2 for regular content keyword
-                    break  # Stop after first match
+        if "research plan for" in content_lower:
+            score += 5
     
-    # 4. Check path keywords with reduced weight
+    # Path analysis
     path_str = normalize_filename(str(Path(file_path).parent))
-    path_matches = set(keyword for keyword in path_keywords if keyword in path_str)
-    # Add just +1 point if any path keyword matches, regardless of how many
-    if path_matches:
-        score += 1  # +1 total for any path match
+    if "research" in path_str and "plan" in path_str:
+        score += 3
     
-    # Special case: check for research-findings in path
-    if ("research-findings" in file_path.lower() or 
-        ("research" in path_str and "findings" in path_str)):
-        score += 5  # Strong indicator this is research findings
-    
-    # 5. Return tag if score meets threshold
     if score >= min_threshold:
-        return {
-            'tag': 'research_findings',
-            'score': score
-        }
-    
-    return {}  # Empty dictionary is returned when threshold isn't met
+        return {'tag': 'research_plan', 'score': score}
+    return None
 
-def tag_as_guide(file_path: str, min_threshold: int = 4) -> Dict[str, Any]:
+def tag_as_research_findings(file_path: str, min_threshold: int = MIN_FINDINGS_SCORE) -> Optional[Dict[str, Any]]:
     """
-    Tags files as conversation guides based on specific scoring criteria:
-    - Minimum score needed for classification (default: 4)
-    - -8 penalty for certain keywords
-    - Priority keywords get additional points
-    - Scores based on filename, content, and path matches
+    Determine if a file should be classified as a research findings document.
+    
+    Uses filename patterns, content analysis, and path analysis to calculate
+    a classification score. Returns classification if score meets threshold.
     
     Args:
-        file_path: Path to the file
-        min_threshold: Minimum score needed for classification (default: 4)
+        file_path: Path to the file to evaluate
+        min_threshold: Minimum score required for classification (default: MIN_FINDINGS_SCORE)
         
     Returns:
-        Dictionary with tag and score if classified as conversation guide,
-        empty dictionary otherwise
+        Dictionary with 'tag' and 'score' if classified as research findings,
+        None if score is below threshold
     """
+    penalty_keywords = {'plan', 'guide', 'readme'}
+    priority_keywords = [
+        'researchfindings', 'research findings', 
+        'findings', 'result', 'results'
+    ]
+    
+    filename = normalize_filename(Path(file_path).stem)
     score = 0
     
-    # 1. Initialize keyword lists
-    penalty_keywords = {'plan', 'findings', 'finding', 'report', 'summary', 'research findings', 
-                      'key findings', 'details of findings', 'researchplan'}
-    
-    filename_keywords = [
-        # Priority keywords - highly confident indicators of conversation guides
-        'conversation-guide', 'convo-guide', 'conversation_guide', 'convo_guide', 
-        'conversationguide', 'convoguid', 'interview-guide', 'interview_guide',
-        'moderator-guide', 'moderator_guide', 'discussion-guide', 'discussion_guide',
-        'usability-test-guide', 'usability_test_guide',
-        # Regular keywords - likely indicators of conversation guides, but less certain
-        'interview', 'discussion', 'questions', 'script', 'moderator', 'protocol',
-        'testing-guide', 'testing_guide', 'user-testing'
-    ]
-    
-    # Guide exact filename patterns without considering file extension
-    guide_exact_name_patterns = [
-        'conversation-guide', 'conversation_guide', 'conversationguide', 
-        'convo-guide', 'convo_guide', 'convoguid',
-        'interview-guide', 'interview_guide',
-        'discussion-guide', 'discussion_guide',
-        'Conversation Guide', 'Conversation_Guide', 'ConversationGuide'
-    ]
-    
-    # Additional significant boost if the filename without extension is an exact match
-    filename_without_ext = Path(file_path).stem
-    if filename_without_ext in guide_exact_name_patterns:
-        score += 12  # Very strong indicator
-    
-    content_keywords = [
-        # Priority keywords - unique to conversation guides
-        'moderator logistics', 'warm-up questions', 'interview questions', 
-        'post-task interview', 'task completion', 'emergency exit',
-        'thank you and closing', 'introduction script', 'tasks',
-        '# conversation guide', '## conversation guide',
-        # Regular keywords - may appear in other docs but still relevant
-        'usability', 'participant', 'introduction', 'research session', 
-        'screener', 'recording', 'think aloud', 'protocol'
-    ]
-    priority_content_keywords = set(content_keywords[:11])
-    
-    path_keywords = {
-        'research', 'usability', 'testing', 'interview', 'user-research',
-        'discovery', 'sessions'
-    }
-    
-    # 2. Check filename
-    filename = normalize_filename(Path(file_path).name)
-    
-    # Special case: If the filename is simply "guide1.txt" or similar
-    if filename.startswith('guide'):
-        score += 5  # Give some points for having "guide" in the filename
-    
-    # Check for penalty keywords first
-    for keyword in penalty_keywords:
-        if keyword in filename:
+    # Penalty check
+    for kw in penalty_keywords:
+        if kw in filename:
             score -= 8
-            break  # Stop checking other penalty keywords once one is found
+            break
     
-    # Special case: if the filename literally contains guide indicators
-    if any(term in filename for term in ["guide", "conversation", "convo", "interview"]):
-        score += 7  # Strong indicator this is a conversation guide
+    # Priority filename patterns
+    if any(p in filename for p in priority_keywords):
+        score += 10
     
-    # Check for patterns that strongly indicate this IS a guide
-    if any(pattern in filename for pattern in filename_keywords[:14]):
-        score += 10  # High confidence patterns get a significant boost
-    elif any(pattern in filename for pattern in filename_keywords[14:]):
-        score += 4  # Regular confidence patterns get a moderate boost
-    
-    # 3. Check content keywords
+    # Content analysis
     content = read_file_content(file_path)
-    if content is not None:
-        # Check for section headers that are common in guides
-        guide_section_headers = [
-            "# conversation guide", "## warm-up questions", "## interview questions",
-            "## task completion", "## post-task interview", "## thank you and closing",
-            "## moderator logistics", "## participant logistics", "## introduction",
-            "## tasks", "## background questions", "## wrap-up"
+    if content and is_valid_content(content):
+        content_lower = content.lower()
+        
+        # Penalize plan/guide content
+        if any(kw in content_lower for kw in ['# research plan', '# conversation guide']):
+            score -= 5
+        
+        # Reward findings content
+        findings_headers = [
+            "# research findings", "## key findings",
+            "# findings", "## recommendations"
         ]
-        
-        # Content keyword patterns to avoid - terms strongly associated with non-guide documents
-        content_patterns_to_penalize = [
-            '# research plan', '# research findings', 'recruitment criteria', 
-            'research methodology', 'hypothesis', 'research goals', 'timeline',
-            'key findings', 'results summary'
-        ]
-        
-        # Penalize if findings or plan content patterns are found
-        for pattern in content_patterns_to_penalize:
-            if pattern.lower() in content.lower():
-                score -= 5  # Strong indicator this is not a conversation guide
+        for header in findings_headers:
+            if header in content_lower:
+                score += 2
                 break
-                
-        # Bonus for guide headers
-        for header in guide_section_headers:
-            if header.lower() in content.lower():
-                score += 5  # Strong indicator of a conversation guide
-                break
-                
-        # Check if specific content patterns distinctive to guides are present
-        if "conversation guide" in content.lower() or "discussion guide" in content.lower():
-            score += 7  # Very strong indicator of a guide
         
-        # First check priority content keywords
-        for keyword in priority_content_keywords:
-            if keyword.lower() in content.lower():
-                score += 4  # +4 for priority content keyword
-                break  # Stop after first match
-        else:
-            # Only check regular content keywords if no priority keyword was found
-            for keyword in content_keywords[11:]:
-                if keyword.lower() in content.lower():
-                    score += 2  # +2 for regular content keyword
-                    break  # Stop after first match
+        if "key findings" in content_lower and "recommendations" in content_lower:
+            score += 6
     
-    # 4. Check path keywords with reduced weight
+    # Path analysis
     path_str = normalize_filename(str(Path(file_path).parent))
-    path_matches = set(keyword for keyword in path_keywords if keyword in path_str)
-    # Add just +1 point if any path keyword matches, regardless of how many
-    if path_matches:
-        score += 1  # +1 total for any path match
+    if "research" in path_str and "findings" in path_str:
+        score += 3
     
-    # 5. Return tag if score meets threshold
     if score >= min_threshold:
-        return {
-            'tag': 'conversation_guide',
-            'score': score
-        }
-    
-    return {}  # Empty dictionary is returned when threshold isn't met
+        return {'tag': 'research_findings', 'score': score}
+    return None
 
-def keyword_based_tagging(file_path: str) -> List[Dict[str, Any]]:
+def tag_as_guide(file_path: str, min_threshold: int = MIN_GUIDE_SCORE) -> Optional[Dict[str, Any]]:
     """
-    Tags files by sequentially applying different tagging strategies.
-    Tries to tag as research finding first, then research plan, then guide, then other types.
+    Determine if a file should be classified as a conversation guide document.
+    
+    Uses filename patterns, content analysis, and path analysis to calculate
+    a classification score. Returns classification if score meets threshold.
     
     Args:
-        file_path: Path to the file to be tagged
+        file_path: Path to the file to evaluate
+        min_threshold: Minimum score required for classification (default: MIN_GUIDE_SCORE)
         
     Returns:
-        List of dictionaries containing tag information and scores
+        Dictionary with 'tag' and 'score' if classified as conversation guide,
+        None if score is below threshold
     """
-    # First try to tag as research findings
+    penalty_keywords = {'plan', 'findings', 'report'}
+    priority_keywords = [
+        'conversationguide', 'convoguide', 'conversation guide',
+        'convoguide', 'interviewguide', 'discussionguide'
+    ]
+    
+    filename = normalize_filename(Path(file_path).stem)
+    score = 0
+    
+    # Penalty check
+    for kw in penalty_keywords:
+        if kw in filename:
+            score -= 8
+            break
+    
+    # Priority filename patterns
+    if any(p in filename for p in priority_keywords):
+        score += 10
+    
+    # Content analysis
+    content = read_file_content(file_path)
+    if content and is_valid_content(content):
+        content_lower = content.lower()
+        
+        # Penalize plan/findings content
+        if any(kw in content_lower for kw in ['# research plan', '# findings']):
+            score -= 5
+        
+        # Reward guide content
+        guide_headers = [
+            "# conversation guide", "## warm-up questions",
+            "## task completion", "## thank you and closing"
+        ]
+        for header in guide_headers:
+            if header in content_lower:
+                score += 2
+                break
+        
+        if "conversation guide" in content_lower:
+            score += 7
+    
+    # Path analysis
+    path_str = normalize_filename(str(Path(file_path).parent))
+    if "research" in path_str and ("interview" in path_str or "usability" in path_str):
+        score += 1
+    
+    if score >= min_threshold:
+        return {'tag': 'conversation_guide', 'score': score}
+    return None
+
+def keyword_based_tagging(file_path: str) -> Dict[str, Any]:
+    """
+    Classify a file by sequentially applying specialized taggers.
+    
+    Tries to classify as research findings first, then research plan,
+    then conversation guide. Falls back to 'unclassified' if none match.
+    
+    Args:
+        file_path: Path to the file to classify
+        
+    Returns:
+        Dictionary containing:
+        - 'tag': classification result
+        - 'score': confidence score
+    """
+    content = read_file_content(file_path)
+    if not content or not is_valid_content(content):
+        return {
+            'tag': 'invalid_content',
+            'score': 0
+        }
+    
+    # Try classification in order of priority
     tag = tag_as_research_findings(file_path)
-    if tag:  # If not empty dictionary
-        return [tag]  # Return as list with single dictionary
+    if tag:
+        return tag
     
-    # If not a research finding, try to tag as research plan
     tag = tag_as_research_plan(file_path)
-    if tag:  # If not empty dictionary
-        return [tag]  # Return as list with single dictionary
+    if tag:
+        return tag
     
-    # If not a research plan, try to tag as conversation guide
     tag = tag_as_guide(file_path)
-    if tag:  # If not empty dictionary
-        return [tag]  # Return as list with single dictionary
+    if tag:
+        return tag
     
-    # If neither, mark as unclassified
-    return [{
+    # Fallback classification
+    return {
         'tag': 'unclassified',
         'score': 1
-    }]
-
-def ai_based_tagging(file_path: str) -> List[Dict[str, Any]]:
-    """
-    Placeholder for AI-based tagging implementation.
-    """
-    return []
+    }
 
 def tag_files(file_paths: List[str]) -> List[Dict[str, Any]]:
     """
-    Main function to process and tag multiple files.
+    Classify multiple files and return their tags.
     
     Args:
-        file_paths: List of paths to files that need to be tagged
+        file_paths: List of file paths to classify
         
     Returns:
-        List of dictionaries containing detailed tagging information for each file
+        List of dictionaries, each containing:
+        - 'file_path': original file path
+        - 'tags': list of classification results (usually one element)
     """
     tagged_files = []
     
@@ -579,14 +319,162 @@ def tag_files(file_paths: List[str]) -> List[Dict[str, Any]]:
         if not os.path.exists(file_path):
             print(f"Warning: File not found - {file_path}")
             continue
-            
+        
         file_tags = {
             'file_path': file_path,
-            'timestamp': datetime.now().isoformat(),
-            'keyword_tags': keyword_based_tagging(file_path),
-            'ai_tags': ai_based_tagging(file_path)
+            'tags': [keyword_based_tagging(file_path)]
         }
-        
         tagged_files.append(file_tags)
     
     return tagged_files
+
+def test_accuracy(test_files_dir: str) -> Dict[str, Any]:
+    """
+    Test classification accuracy against known test cases.
+    
+    Reads test files from plan_path.txt, findings_path.txt, and guide_path.txt,
+    then evaluates classifier performance against these known categories.
+    
+    Args:
+        test_files_dir: Directory containing the test files
+        
+    Returns:
+        Dictionary containing comprehensive accuracy results:
+        - 'research_plans': metrics for research plan classification
+        - 'research_findings': metrics for findings classification
+        - 'conversation_guides': metrics for guide classification
+        - 'overall_accuracy': combined accuracy across all categories
+        - 'total_files_processed': total files successfully classified
+        - 'total_correct': total correct classifications
+        - 'total_incorrect': total incorrect classifications
+    """
+    def read_test_paths(filename):
+        """Helper to read test file paths from a text file."""
+        try:
+            with open(os.path.join(test_files_dir, filename), 'r') as f:
+                return [line.strip() for line in f if line.strip()]
+        except FileNotFoundError:
+            print(f"Warning: Test file {filename} not found")
+            return []
+    
+    # Load test file paths
+    plan_paths = read_test_paths("plan_path.txt")
+    findings_paths = read_test_paths("findings_path.txt")
+    guide_paths = read_test_paths("guide_path.txt")
+    
+    # Prepare all files with their expected categories
+    all_files = []
+    all_files.extend([(path, 'research_plan') for path in plan_paths])
+    all_files.extend([(path, 'research_findings') for path in findings_paths])
+    all_files.extend([(path, 'conversation_guide') for path in guide_paths])
+    
+    # Classify all files
+    file_paths = [file[0] for file in all_files]
+    tagged_files = tag_files(file_paths)
+    
+    # Create prediction mapping
+    pred_tags = {}
+    for file in tagged_files:
+        path = file['file_path']
+        pred_tags[path] = file['tags'][0]['tag'] if file['tags'] else 'unclassified'
+    
+    def calculate_metrics(expected_files, expected_tag):
+        """
+        Calculate classification metrics for a specific document type.
+        
+        Args:
+            expected_files: List of (path, expected_tag) tuples
+            expected_tag: The correct tag for these files
+            
+        Returns:
+            Dictionary of metrics including accuracy, counts, and details
+        """
+        correct = 0
+        incorrect = 0
+        not_found = 0
+        details = []
+        
+        for path, expected in expected_files:
+            if path not in pred_tags:
+                not_found += 1
+                details.append({
+                    'file': path,
+                    'expected': expected,
+                    'predicted': 'file_not_found',
+                    'correct': False
+                })
+                continue
+            
+            predicted = pred_tags[path]
+            is_correct = predicted == expected
+            if is_correct:
+                correct += 1
+            else:
+                incorrect += 1
+            
+            details.append({
+                'file': path,
+                'expected': expected,
+                'predicted': predicted,
+                'correct': is_correct
+            })
+        
+        total = correct + incorrect
+        accuracy = (correct / total * 100) if total > 0 else 0
+        
+        return {
+            'total_files': len(expected_files),
+            'files_found': total,
+            'files_not_found': not_found,
+            'correct': correct,
+            'incorrect': incorrect,
+            'accuracy': accuracy,
+            'details': details
+        }
+    
+    # Calculate metrics for each category
+    plan_results = calculate_metrics([(p, 'research_plan') for p in plan_paths], 'research_plan')
+    findings_results = calculate_metrics([(p, 'research_findings') for p in findings_paths], 'research_findings')
+    guide_results = calculate_metrics([(p, 'conversation_guide') for p in guide_paths], 'conversation_guide')
+    
+    # Calculate overall statistics
+    total_correct = plan_results['correct'] + findings_results['correct'] + guide_results['correct']
+    total_files = plan_results['files_found'] + findings_results['files_found'] + guide_results['files_found']
+    overall_accuracy = (total_correct / total_files * 100) if total_files > 0 else 0
+    
+    return {
+        'research_plans': plan_results,
+        'research_findings': findings_results,
+        'conversation_guides': guide_results,
+        'overall_accuracy': overall_accuracy,
+        'total_files_processed': total_files,
+        'total_correct': total_correct,
+        'total_incorrect': total_files - total_correct
+    }
+
+def print_results(results: Dict[str, Any]):
+    """
+    Print classification accuracy results in human-readable format.
+    
+    Args:
+        results: Dictionary of results from test_accuracy()
+    """
+    print("\n=== Classification Accuracy Results ===")
+    print(f"\nOverall Accuracy: {results['overall_accuracy']:.2f}%")
+    print(f"Total Files Processed: {results['total_files_processed']}")
+    print(f"Total Correct: {results['total_correct']}")
+    print(f"Total Incorrect: {results['total_incorrect']}")
+    
+    for category in ['research_plans', 'research_findings', 'conversation_guides']:
+        data = results[category]
+        print(f"\n{category.replace('_', ' ').title()}:")
+        print(f"  Accuracy: {data['accuracy']:.2f}%")
+        print(f"  Correct: {data['correct']}")
+        print(f"  Incorrect: {data['incorrect']}")
+        print(f"  Files Not Found: {data['files_not_found']}")
+        print(f"  Total Files: {data['total_files']}")
+
+if __name__ == "__main__":
+    print("Running document classification accuracy test...")
+    results = test_accuracy('.')
+    print_results(results)
