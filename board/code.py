@@ -1,480 +1,271 @@
-from pathlib import Path
-from typing import Dict, Any, List, Optional
-import re
-import os
-from collections import defaultdict
-
-# Configuration constants
-MIN_CONTENT_LENGTH = 20  # Minimum words to consider for valid content
-MIN_PLAN_SCORE = 5       # Minimum score to classify as research plan
-MIN_FINDINGS_SCORE = 6   # Minimum score to classify as research findings
-MIN_GUIDE_SCORE = 5      # Minimum score to classify as conversation guide
-
-# Caching dictionaries
-content_cache = {}       # Cache for file contents to avoid repeated reads
-stats = defaultdict(int) # Statistics counter for various operations
-
-def normalize_filename(filename: str) -> str:
-    """
-    Normalize filename to a consistent format for comparison.
-    
-    Converts to lowercase, removes hyphens and underscores, and normalizes spaces.
-    
-    Args:
-        filename: Input filename to be normalized
-        
-    Returns:
-        Normalized filename string
-    """
-    normalized = filename.lower()
-    normalized = normalized.replace('-', '').replace('_', ' ')
-    normalized = ' '.join(normalized.split())
-    return normalized
-
-def read_file_content(file_path: str) -> Optional[str]:
-    """
-    Read content from a local file with caching.
-    
-    Args:
-        file_path: Path to the file to read
-        
-    Returns:
-        Content of the file as string if successful, None if reading fails
-    """
-    if file_path in content_cache:
-        return content_cache[file_path]
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            content_cache[file_path] = content
-            return content
-    except Exception as e:
-        print(f"Failed to read {file_path}: {e}")
-        return None
-
-def is_valid_content(content: str) -> bool:
-    """
-    Check if content meets minimum requirements for processing.
-    
-    Args:
-        content: Text content to validate
-        
-    Returns:
-        True if content is valid (non-empty and meets minimum length), False otherwise
-    """
-    return content and len(content.split()) >= MIN_CONTENT_LENGTH
-
-def tag_as_research_plan(file_path: str, min_threshold: int = MIN_PLAN_SCORE) -> Optional[Dict[str, Any]]:
-    """
-    Determine if a file should be classified as a research plan document.
-    
-    Uses filename patterns, content analysis, and path analysis to calculate
-    a classification score. Returns classification if score meets threshold.
-    
-    Args:
-        file_path: Path to the file to evaluate
-        min_threshold: Minimum score required for classification (default: MIN_PLAN_SCORE)
-        
-    Returns:
-        Dictionary with 'tag' and 'score' if classified as research plan,
-        None if score is below threshold
-    """
-    penalty_keywords = {'guide', 'findings', 'report', 'summary'}
-    priority_keywords = [
-        'researchplan', 'research plan', 
-        'uatplan', 'researchplan'
-    ]
-    
-    filename = normalize_filename(Path(file_path).stem)
-    score = 0
-    
-    # Penalty check
-    for kw in penalty_keywords:
-        if kw in filename:
-            score -= 8
-            break
-    
-    # Priority filename patterns
-    if any(p in filename for p in priority_keywords):
-        score += 10
-    
-    # Content analysis
-    content = read_file_content(file_path)
-    if content and is_valid_content(content):
-        content_lower = content.lower()
-        
-        # Penalize findings/guide content
-        if any(kw in content_lower for kw in ['# findings', '# conversation guide']):
-            score -= 5
-        
-        # Reward plan content
-        plan_headers = [
-            "## background", "## research goals", "## methodology", 
-            "## recruitment", "## timeline", "## team roles"
-        ]
-        for header in plan_headers:
-            if header in content_lower:
-                score += 2
-                break
-        
-        if "research plan for" in content_lower:
-            score += 5
-    
-    # Path analysis
-    path_str = normalize_filename(str(Path(file_path).parent))
-    if "research" in path_str and "plan" in path_str:
-        score += 3
-    
-    if score >= min_threshold:
-        return {'tag': 'research_plan', 'score': score}
-    return None
-
-def tag_as_research_findings(file_path: str, min_threshold: int = MIN_FINDINGS_SCORE) -> Optional[Dict[str, Any]]:
-    """
-    Determine if a file should be classified as a research findings document.
-    
-    Uses filename patterns, content analysis, and path analysis to calculate
-    a classification score. Returns classification if score meets threshold.
-    
-    Args:
-        file_path: Path to the file to evaluate
-        min_threshold: Minimum score required for classification (default: MIN_FINDINGS_SCORE)
-        
-    Returns:
-        Dictionary with 'tag' and 'score' if classified as research findings,
-        None if score is below threshold
-    """
-    penalty_keywords = {'plan', 'guide', 'readme'}
-    priority_keywords = [
-        'researchfindings', 'research findings', 
-        'findings', 'result', 'results'
-    ]
-    
-    filename = normalize_filename(Path(file_path).stem)
-    score = 0
-    
-    # Penalty check
-    for kw in penalty_keywords:
-        if kw in filename:
-            score -= 8
-            break
-    
-    # Priority filename patterns
-    if any(p in filename for p in priority_keywords):
-        score += 10
-    
-    # Content analysis
-    content = read_file_content(file_path)
-    if content and is_valid_content(content):
-        content_lower = content.lower()
-        
-        # Penalize plan/guide content
-        if any(kw in content_lower for kw in ['# research plan', '# conversation guide']):
-            score -= 5
-        
-        # Reward findings content
-        findings_headers = [
-            "# research findings", "## key findings",
-            "# findings", "## recommendations"
-        ]
-        for header in findings_headers:
-            if header in content_lower:
-                score += 2
-                break
-        
-        if "key findings" in content_lower and "recommendations" in content_lower:
-            score += 6
-    
-    # Path analysis
-    path_str = normalize_filename(str(Path(file_path).parent))
-    if "research" in path_str and "findings" in path_str:
-        score += 3
-    
-    if score >= min_threshold:
-        return {'tag': 'research_findings', 'score': score}
-    return None
-
-def tag_as_guide(file_path: str, min_threshold: int = MIN_GUIDE_SCORE) -> Optional[Dict[str, Any]]:
-    """
-    Determine if a file should be classified as a conversation guide document.
-    
-    Uses filename patterns, content analysis, and path analysis to calculate
-    a classification score. Returns classification if score meets threshold.
-    
-    Args:
-        file_path: Path to the file to evaluate
-        min_threshold: Minimum score required for classification (default: MIN_GUIDE_SCORE)
-        
-    Returns:
-        Dictionary with 'tag' and 'score' if classified as conversation guide,
-        None if score is below threshold
-    """
-    penalty_keywords = {'plan', 'findings', 'report'}
-    priority_keywords = [
-        'conversationguide', 'convoguide', 'conversation guide',
-        'convoguide', 'interviewguide', 'discussionguide'
-    ]
-    
-    filename = normalize_filename(Path(file_path).stem)
-    score = 0
-    
-    # Penalty check
-    for kw in penalty_keywords:
-        if kw in filename:
-            score -= 8
-            break
-    
-    # Priority filename patterns
-    if any(p in filename for p in priority_keywords):
-        score += 10
-    
-    # Content analysis
-    content = read_file_content(file_path)
-    if content and is_valid_content(content):
-        content_lower = content.lower()
-        
-        # Penalize plan/findings content
-        if any(kw in content_lower for kw in ['# research plan', '# findings']):
-            score -= 5
-        
-        # Reward guide content
-        guide_headers = [
-            "# conversation guide", "## warm-up questions",
-            "## task completion", "## thank you and closing"
-        ]
-        for header in guide_headers:
-            if header in content_lower:
-                score += 2
-                break
-        
-        if "conversation guide" in content_lower:
-            score += 7
-    
-    # Path analysis
-    path_str = normalize_filename(str(Path(file_path).parent))
-    if "research" in path_str and ("interview" in path_str or "usability" in path_str):
-        score += 1
-    
-    if score >= min_threshold:
-        return {'tag': 'conversation_guide', 'score': score}
-    return None
-
-def keyword_based_tagging(file_path: str) -> Dict[str, Any]:
-    """
-    Classify a file by sequentially applying specialized taggers.
-    
-    Tries to classify as research findings first, then research plan,
-    then conversation guide. Falls back to 'unclassified' if none match.
-    
-    Args:
-        file_path: Path to the file to classify
-        
-    Returns:
-        Dictionary containing:
-        - 'tag': classification result
-        - 'score': confidence score
-    """
-    content = read_file_content(file_path)
-    if not content or not is_valid_content(content):
-        return {
-            'tag': 'invalid_content',
-            'score': 0
-        }
-    
-    # Try classification in order of priority
-    tag = tag_as_research_findings(file_path)
-    if tag:
-        return tag
-    
-    tag = tag_as_research_plan(file_path)
-    if tag:
-        return tag
-    
-    tag = tag_as_guide(file_path)
-    if tag:
-        return tag
-    
-    # Fallback classification
-    return {
-        'tag': 'unclassified',
-        'score': 1
-    }
-
-def tag_files(file_paths: List[str]) -> List[Dict[str, Any]]:
-    """
-    Classify multiple files and return their tags.
-    
-    Args:
-        file_paths: List of file paths to classify
-        
-    Returns:
-        List of dictionaries, each containing:
-        - 'file_path': original file path
-        - 'tags': list of classification results (usually one element)
-    """
-    tagged_files = []
-    
-    for file_path in file_paths:
-        if not os.path.exists(file_path):
-            print(f"Warning: File not found - {file_path}")
-            continue
-        
-        file_tags = {
-            'file_path': file_path,
-            'tags': [keyword_based_tagging(file_path)]
-        }
-        tagged_files.append(file_tags)
-    
-    return tagged_files
-
-def test_accuracy(test_files_dir: str) -> Dict[str, Any]:
-    """
-    Test classification accuracy against known test cases.
-    
-    Reads test files from plan_path.txt, findings_path.txt, and guide_path.txt,
-    then evaluates classifier performance against these known categories.
-    
-    Args:
-        test_files_dir: Directory containing the test files
-        
-    Returns:
-        Dictionary containing comprehensive accuracy results:
-        - 'research_plans': metrics for research plan classification
-        - 'research_findings': metrics for findings classification
-        - 'conversation_guides': metrics for guide classification
-        - 'overall_accuracy': combined accuracy across all categories
-        - 'total_files_processed': total files successfully classified
-        - 'total_correct': total correct classifications
-        - 'total_incorrect': total incorrect classifications
-    """
-    def read_test_paths(filename):
-        """Helper to read test file paths from a text file."""
-        try:
-            with open(os.path.join(test_files_dir, filename), 'r') as f:
-                return [line.strip() for line in f if line.strip()]
-        except FileNotFoundError:
-            print(f"Warning: Test file {filename} not found")
-            return []
-    
-    # Load test file paths
-    plan_paths = read_test_paths("plan_path.txt")
-    findings_paths = read_test_paths("findings_path.txt")
-    guide_paths = read_test_paths("guide_path.txt")
-    
-    # Prepare all files with their expected categories
-    all_files = []
-    all_files.extend([(path, 'research_plan') for path in plan_paths])
-    all_files.extend([(path, 'research_findings') for path in findings_paths])
-    all_files.extend([(path, 'conversation_guide') for path in guide_paths])
-    
-    # Classify all files
-    file_paths = [file[0] for file in all_files]
-    tagged_files = tag_files(file_paths)
-    
-    # Create prediction mapping
-    pred_tags = {}
-    for file in tagged_files:
-        path = file['file_path']
-        pred_tags[path] = file['tags'][0]['tag'] if file['tags'] else 'unclassified'
-    
-    def calculate_metrics(expected_files, expected_tag):
-        """
-        Calculate classification metrics for a specific document type.
-        
-        Args:
-            expected_files: List of (path, expected_tag) tuples
-            expected_tag: The correct tag for these files
-            
-        Returns:
-            Dictionary of metrics including accuracy, counts, and details
-        """
-        correct = 0
-        incorrect = 0
-        not_found = 0
-        details = []
-        
-        for path, expected in expected_files:
-            if path not in pred_tags:
-                not_found += 1
-                details.append({
-                    'file': path,
-                    'expected': expected,
-                    'predicted': 'file_not_found',
-                    'correct': False
-                })
-                continue
-            
-            predicted = pred_tags[path]
-            is_correct = predicted == expected
-            if is_correct:
-                correct += 1
-            else:
-                incorrect += 1
-            
-            details.append({
-                'file': path,
-                'expected': expected,
-                'predicted': predicted,
-                'correct': is_correct
-            })
-        
-        total = correct + incorrect
-        accuracy = (correct / total * 100) if total > 0 else 0
-        
-        return {
-            'total_files': len(expected_files),
-            'files_found': total,
-            'files_not_found': not_found,
-            'correct': correct,
-            'incorrect': incorrect,
-            'accuracy': accuracy,
-            'details': details
-        }
-    
-    # Calculate metrics for each category
-    plan_results = calculate_metrics([(p, 'research_plan') for p in plan_paths], 'research_plan')
-    findings_results = calculate_metrics([(p, 'research_findings') for p in findings_paths], 'research_findings')
-    guide_results = calculate_metrics([(p, 'conversation_guide') for p in guide_paths], 'conversation_guide')
-    
-    # Calculate overall statistics
-    total_correct = plan_results['correct'] + findings_results['correct'] + guide_results['correct']
-    total_files = plan_results['files_found'] + findings_results['files_found'] + guide_results['files_found']
-    overall_accuracy = (total_correct / total_files * 100) if total_files > 0 else 0
-    
-    return {
-        'research_plans': plan_results,
-        'research_findings': findings_results,
-        'conversation_guides': guide_results,
-        'overall_accuracy': overall_accuracy,
-        'total_files_processed': total_files,
-        'total_correct': total_correct,
-        'total_incorrect': total_files - total_correct
-    }
-
-def print_results(results: Dict[str, Any]):
-    """
-    Print classification accuracy results in human-readable format.
-    
-    Args:
-        results: Dictionary of results from test_accuracy()
-    """
-    print("\n=== Classification Accuracy Results ===")
-    print(f"\nOverall Accuracy: {results['overall_accuracy']:.2f}%")
-    print(f"Total Files Processed: {results['total_files_processed']}")
-    print(f"Total Correct: {results['total_correct']}")
-    print(f"Total Incorrect: {results['total_incorrect']}")
-    
-    for category in ['research_plans', 'research_findings', 'conversation_guides']:
-        data = results[category]
-        print(f"\n{category.replace('_', ' ').title()}:")
-        print(f"  Accuracy: {data['accuracy']:.2f}%")
-        print(f"  Correct: {data['correct']}")
-        print(f"  Incorrect: {data['incorrect']}")
-        print(f"  Files Not Found: {data['files_not_found']}")
-        print(f"  Total Files: {data['total_files']}")
-
-if __name__ == "__main__":
-    print("Running document classification accuracy test...")
-    results = test_accuracy('.')
-    print_results(results)
+products/accredited-representation-management/research/2023-09-secondary-research/2023-09-secondary-research-accredited-representation-management.md
+products/accredited-representative-facing/research/2024-02 User Interviews/research-report.md
+products/apply-for-home-loan-COE/research-design/usability-testing-2/research-findings.md
+products/accredited-representation-management/research/2023-11-ARM-findarep-nav-usertest/research-findings.md
+products/accredited-representation-management/research/2023-12-ARM-analytics/research-findings.md
+products/accredited-representation-management/research/2024-01-ARM-appointarep-usertest/research-findings.md
+products/accredited-representation-management/research/2024-02-appointarep-unauth-usertest/research-findings.md
+products/accredited-representation-management/research/2024-03-ARM-findarep-live-usertest/research-findings.md
+products/accredited-representation-management/research/2024-04-ARM-veteran-representative-experience-interviews/research-findings.md
+products/accredited-representation-management/research/2024-06-ARM-appointarep-digitalsubmit-usertest/research-findings.md
+products/accredited-representation-management/research/2024-08-ARM-appointarep-crossaccreditedVSOR-usertest/research-findings.md
+products/ask-va/design/User research/05-2024 Dashboard/Findings.md
+products/authenticated-patterns/Design and Research/2024-07-Research Initiative-One-Prefill/Prefill Research Report 09_2024.md
+products/accredited-representative-facing/research/2024-03 Single Accredited Testing/research-report.md
+products/accredited-representative-facing/research/2024-05 NACVSO/research-report.md
+products/accredited-representative-facing/research/2024-07 OGC Contact Information Updates/research-report.md
+products/ask-va/design/User research/07-2024 Assistive tech/Dashboard/Findings.md
+products/campaign-landing-page/research/beta_test_synthesis_2021.md
+products/caregivers/1010cg-mvp/Sign-as-Rep-Round2-Usability-April 2021/research findings.md
+products/claim-appeal-status/appeals-status/v3/research-findings-01.31.2019.md
+products/combined_fsr/research/enhanced_fsr/research-findings.md
+products/combined_va_debt_portal/payment-history/research/VHA-usability-study-9-2024/research-findings.md
+products/caregivers/1010cg-mvp/Sign-as-Rep-Round2-Usability-April 2021/topline summary_research findings.md
+products/caregivers/1010cg-mvp/Sign-as-a Rep-Round3-Oct2021/Content specific research/Research findings.md
+products/caregivers/1010cg-mvp/Sign-as-a Rep-Round3-Oct2021/Usability research/research-findings.md
+products/caregivers/1010cg-mvp/Usability Study-Sign as Representative- February 2021/research-findings.md
+products/caregivers/1010cg-mvp/Usability-Test-Dec-2020/research-findings.md
+products/caregivers/1010cg-mvp/usability-testing-jan2020/research-findings.md
+products/caregivers/1010cg-mvp/Usability Study-Sign as Representative- February 2021/research-findings.md
+products/caregivers/1010cg-mvp/Usability-Test-Dec-2020/research-findings.md
+products/caregivers/1010cg-mvp/usability-testing-jan2020/research-findings.md
+products/content/audience-hubs/family-member-hub/research/11-2023-family-hub-research-findings.md
+products/claim-appeal-status/research/2022-08-Decision-Letter-Download/research-findings.md
+products/claim-appeal-status/research/2022-11-Decision-Reviews/research-findings.md
+products/claim-appeal-status/research/2023-03-Initial-Decisions-CST/research-findings.md
+products/combined_va_debt_portal/payment-history/research/usability-study-6-2024/research-findings.md
+products/combined_va_debt_portal/research/exploratory-2024/research-findings.md
+products/combined_va_debt_portal/research/usability-apr-2022/research-findings.md
+products/Debt Resolution/Medical_Copays/research/feb-2021/pre-discovery-research.md
+products/content/content-strategy-ia-collaboration/content-placement-criteria/research-findings-r1.md
+products/decision-reviews/Notice-of-Disagreement/Research/012024-accessible-submission-download/research-findings.md
+products/dependents/research/2023-09-dependents-research/research-findings.md
+products/disability/526ez/research/2023-05-526ezLandingPagesRedesign/526 Landing Pages Redesign Research Findings.pdf
+products/decision-reviews/Notice-of-Disagreement/Research/032021-NOD-usability/findings.md
+products/decision-reviews/Notice-of-Disagreement/Research/042023 NoD Evaluative Research/research-findings.md
+products/decision-reviews/Supplemental-Claims/Research/1222-PACT-Act/research-findings.md
+products/decision-reviews/Supplemental-Claims/Research/MVP Usability Research/research-findings.md
+products/decision-reviews/higher-level-review/research/heuristic-review-summary-of-finding.md
+products/decision-reviews/higher-level-review/research/research-summary.md
+products/disability/526ez/research/2023-07-Toxic-Exposure/research-findings.md
+products/disability/526ez/research/2023-11-Shadowing-Research/research-findings.md
+products/disability/526ez/research/2024-06 0781 Research/Research Findings.md
+products/disability/526ez/research/2024-07-Submission-Status/Research-findings.md
+products/disability/526ez/research/CC-Team-Research/2023-10 Conditions List/research-findings.md
+products/disability/526ez/research/CC-Team-Research/2024-07 Conditions Page Assistive Technology Testing/researchreport.md
+products/disability/526ez/research/Intent to file Research/ITF Research Summary.md
+products/disability/526ez/research/Medallia Research/2023-10 Research Findings.md
+products/disability/526ez/research/archive/8940-4192/interviews/8940-userresearch-findingsnotes.pdf
+products/disability/526ez/research/archive/July-2021/Findings 526 Usability Test Aug 2021.pdf
+products/disability/abd-vro/2022-06-PACT-Act-presumptive-veterans/PACT-Act-research-report.md
+products/disability/abd-vro/2023-06-max-CFI-discovery/2023-07-max-CFI-report.md
+products/disability/abd-vro/2024-01-Max-CFI-Refinements/2024-01-Max-CFI-Refinements-Report.md
+products/disability/abd-vro/2024-7-Claim-Evidence/findings.md
+products/disability/declare-dependent/research/june-2018/session-report.md
+products/disability/disability-compensation-claim/bdd/BDD Research/BDD-Usability-test-April2021/Findings.md
+products/disability/disability-compensation-claim/bdd/BDD Research/BDD-usability-test-April/Research-findings-test2.md
+products/disability/disability-compensation-claim/bdd/BDD Research/BDD-usability-test-April/Research-findings-test2.md
+products/disability/disability-compensation-claim/bdd/BDD Research/Initial-usability-March2020/BDD-research-findings.md
+products/disability/disability-compensation-claim/bdd/BDD Research/BDD-usability-test-April/Research-findings-test2.md
+products/disability/disability-compensation-claim/bdd/BDD Research/Initial-usability-March2020/BDD-research-findings.md
+products/ebenefits/view-payment-history/research-design/design-discovery.md
+products/education-careers/application/1990/discovery/key-findings-9-28-16.md
+products/education-careers/application/1990/discovery/key-research-findings.md
+products/eFolders_Migration/research/discovery-sept20/research-readout.md
+products/facilities/community-living-centers/discovery/CLC-DISCOVERY-FINDINGS.md
+products/facilities/facility-locator/research/archive/9.29researchfindings.md
+products/facilities/facility-locator/research/discovery-sprints/user-research/user-research-findings.md
+products/facilities/facility-locator/research/user-research/2021-mobile-experience-research/research-findings.md
+products/facilities/facility-locator/research/user-research/FL-Search-march2020/research-findings.md
+products/facilities/facility-locator/research/user-research/benefits-taxonomy-research-SME/research-findings.md
+products/facilities/facility-locator/research/user-research/emergency-care-mashup/research-findings.md
+products/facilities/facility-locator/research/user-research/facility-status/research-findings.md
+products/facilities/facility-locator/research/user-research/redesign/filter-categorization/research-findings.md
+products/facilities/facility-locator/research/user-research/screenreader-usability-study/research-findings-add-01.md
+products/facilities/facility-locator/research/user-research/screenreader-usability-study/research-findings.md
+products/facilities/facility-locator/research/user-research/services-taxonomy/Research-Findings.md
+products/facilities/facility-locator/research/user-research/urgent-care-PDF/research-findings.md
+products/facilities/facility-locator/research/user-research/urgent-care-mashup/research-findings.md
+products/facilities/facility-locator/research/user-research/urgent-care/research-findings.md
+products/facilities/regional-offices/research/2022-8-veteran-facing/research-findings.md
+products/facilities/regional-offices/research/2022-9-public-contact/research-findings.md
+products/facilities/regional-offices/research/2023-06-veteran-facing/research-findings.md
+products/facilities/vaccination-taxonomy/research-findings.md
+products/facilities/vet-centers/initiatives/2020-2021-modernization/discovery/client-usability-tests/research-findings.md
+products/facilities/vet-centers/initiatives/2020-2021-modernization/discovery/outreach-specialist-interviews/research-findings.md
+products/facilities/vet-centers/initiatives/2021-03-services-taxonomy/taxonomy-study/research-findings.md
+products/find-a-va-form/initiatives/2021-post-mvp-releases/research/research-findings.md
+products/find-a-yellow-ribbon-school/v1/yellow-ribbon-mvp/research/2020-yellow-ribbon-research-findings.pptx
+products/find-a-yellow-ribbon-school/v1/yellow-ribbon-mvp/research/research-findings.md
+products/harassment-reporting/research/static-landing-page/research-findings.md
+products/header-footer/initiatives/2024-federal-standardized-header-footer/research/research-findings-phases1&2.md
+products/health-care/1095b-tax-form/research/Research-Findings-Round1.md
+products/health-care/1095b-tax-form/research/research-report-round1.md
+products/health-care/1095b-tax-form/research/round 1 Research Findings Report.md
+products/health-care/application/va-application/research/2021-09-Flow Research/research-findings.md
+products/health-care/application/va-application/research/2022-06-Short form usability/research-findings.md
+products/health-care/application/va-application/research/2022-10-Household Information Section/Research Findings.md
+products/health-care/application/va-application/research/2023-01-Baseline Task Research/research-findings.md
+products/health-care/application/va-application/research/2023-04-Household information section usability/research-findings.md
+products/health-care/application/va-application/research/2023-06-Priority Group and Financial Disclosure/research-findings.md
+products/health-care/application/va-application/research/2023-06-Registration flow exploration/research-findings.md
+products/health-care/application/va-application/research/2023-11-EZR MVP UAT/Research Finding.md
+products/health-care/application/va-application/research/2023-11-Registration Reasons Tree Test/research-findings.md
+products/health-care/application/va-application/research/2024-04-ToxicExposure-UsabilityStudy/Research Findings for 10-10EZ Toxic Exposure Questions Usability Study.pdf
+products/health-care/application/va-application/research/2024-04-ToxicExposure-UsabilityStudy/research-findings.md
+products/health-care/application/va-application/research/2024-09-Social Listening/Research-Findings.md
+products/health-care/application/va-application/research/april-may-2021/end-user-discovery/research findings.md
+products/health-care/application/va-application/research/user-testing/dashboard-updates/research-summary.md
+products/health-care/application/va-application/research/user-testing/mar-2019/research-summary.md
+products/health-care/appointments/va-online-scheduling/research/2020-05-express-care-research/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2020-07-vaos-mvp-and-express-care-user-research/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2020-10-cc-provider-selection-usability/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2021-01-appts-list-test/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2021-05-facilities-personalization-research/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2021-08-facilities-ab-test/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2021-11-request-clarification-research/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2022-01-mhv-and-vaos-appts-list-discovery/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2022-09-appts-list-usability/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2023-02-appt-list-usability-screenreader/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2023-08-print-button-analytics/research-report.md
+products/health-care/appointments/va-online-scheduling/research/2023-10-appt-details-redesign/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2023-10-coordinator-feedback/research-report.md
+products/health-care/appointments/va-online-scheduling/research/2023-11-mhv-on-va-gov-phase-2b-vaos-uat/research-findings.md
+products/health-care/appointments/va-online-scheduling/research/2024-05-oh-scheduling/research-findings.md
+products/health-care/beneficiary-travel/research/2024-01-Status Visibility IA Study/ResearchFindings.md
+products/health-care/beneficiary-travel/research/2024-04-Reimbursement-Status-Look-and-Feel-Study/05.08Findings.md
+products/health-care/beneficiary-travel/research/2024-04-Reimbursement-Status-Look-and-Feel-Study/ResearchFindings.md
+products/health-care/beneficiary-travel/research/2024-06-Travel-Claim-Status-Language-Generative-Study/ResearchFindings.md
+products/health-care/champva/1010D/research/users/Usability-Accessibility Test (April)/1010d-research-report.md
+products/health-care/checkin/research/2022-10 Patient Check In ID Verification - SSN4 Text Input vs. Date of Birth (DoB) Memorable Date Comparison/research-findings.md
+products/health-care/checkin/research/2022-12 Patient Check In Travel Reimbursement Staff Interviews at Wilkes-Barre/research-findings.md
+products/health-care/checkin/research/2022-12 Patient Check In Travel Reimbursement Veteran Intercept at Wilkes-Barre/research-findings.md
+products/health-care/checkin/research/2023-04 Unified Check-In Experience Usability Study/research-findings.md
+products/health-care/checkin/research/2023-11 Past Appointments Travel Reimbursement Generative Usability Study/research-findings.md
+products/health-care/checkin/research/2024-04 Unmoderated Content Evaluation for Multiple Facilities Selection in BT Oracle Health App/research-findings.md
+products/health-care/checkin/research/accessibility/research-findings.md
+products/health-care/checkin/research/remote-discovery/Research Findings.pdf
+products/health-care/checkin/research/remote-discovery/research-findings.md
+products/health-care/checkin/research/staff-facing/bay-pines-in-person/research-findings.md
+products/health-care/checkin/research/staff-facing/corpus-christi-in-person/research-report.md
+products/health-care/checkin/research/staff-facing/st-louis/nov-site-visit/research-findings.md
+products/health-care/checkin/research/staff-facing/st-louis/nov-site-visit/research-findings.pdf
+products/health-care/checkin/research/staff-facing/st-louis/pilot-feedback/research-findings.md
+products/health-care/checkin/research/veteran-facing/Spanish/research-findings.md
+products/health-care/checkin/research/veteran-facing/StLouis-pilot-feedback/research-findings.md
+products/health-care/checkin/research/veteran-facing/bay-pines-in-person-uat/research-findings.md
+products/health-care/checkin/research/veteran-facing/corpus-christi-in-person/research-report.md
+products/health-care/checkin/research/veteran-facing/mvp-UAT/research-findings.md
+products/health-care/checkin/research/veteran-facing/mvp-UAT/research-findings.pdf
+products/health-care/checkin/research/veteran-facing/mvp-usability/Research Findings.pdf
+products/health-care/checkin/research/veteran-facing/mvp-usability/research-findings.md
+products/health-care/checkin/research/veteran-facing/phase-2-3-4/Research Findings.pdf
+products/health-care/checkin/research/veteran-facing/phase2-usability/research-findings.md
+products/health-care/checkin/research/veteran-facing/phase2-usability/research-findings.pdf
+products/health-care/checkin/research/veteran-facing/pre-check-in-usability/research-findings.md
+products/health-care/checkin/research/veteran-facing/telephone/research-findings.md
+products/health-care/checkin/research/veteran-facing/telephone/research-findings.pdf
+products/health-care/checkin/research/veteran-facing/travel-reimbursement-mvp-remote-test/research-findings.md
+products/health-care/coronavirus-chatbot/research/chatbot-usability-report.md
+products/health-care/coronavirus-chatbot/research/covid-19-chatbot-research-report.md
+products/health-care/covid-vaccine-trials/research/research-findings.md
+products/health-care/supply-reordering-tool/research/2024-04-Meds and supplies concept testing/Findings.md
+products/health-care/supply-reordering-tool/research/2024-03-Supply-Reordering-Research/Findings and recommendations.md
+products/health-care/questionnaire/discovery/user-research/research-findings.md
+products/health-care/prescription-refills/vets-prescriptions/research/rx-tracking/research-findings.md
+products/health-care/digital-health-modernization/mhv-to-va.gov/medical-records/research/2022-09-informational-interviews/research-findings.md
+products/health-care/digital-health-modernization/mhv-to-va.gov/medical-records/research/2022-10_Generative-research/2022-11-medical-records-readout.md
+products/health-care/digital-health-modernization/mhv-to-va.gov/medical-records/research/2023-05-usability-testing-round-1/research-findings.md
+products/health-care/digital-health-modernization/mhv-to-va.gov/medical-records/research/2024-03-usability-testing-rd2-at/research-findings.md
+products/health-care/digital-health-modernization/mhv-to-va.gov/medical-records/research/2024-08-usability-testing-rd3-at/research-findings.md
+products/identity/Products/login.gov/Sign-In Accessibility/Sign-in_Accessibilty_Research_Findings.md
+products/identity-personalization/direct-deposit/Research/2019-06-direct-deposit-updates-usability/research-summary.md
+products/identity/Products/login.gov/Sign-In Accessibility/SignIn Redesign-Research-Findings-Synthesis.md
+products/identity/Products/login.gov/Login.gov-Sign-In-Attributes-Card-Sort-Research-Findings.md
+products/identity/Products/login.gov/Login.gov-Research-Findings-Synthesis.md
+products/identity/Research/2022-11 Login.gov Remote Identity Proofing/2022-11  Research Findings - Remote Identity Proofing and MFA.md
+products/identity/Research/2023-02 Desk Research/Findings from VA login post comment analysis.md
+products/identity/Research/2023-02 Desk Research/Findings from VA mobile device login analytics.md
+products/identity/Research/2023-02 Desk Research/Identity Desk Research Share.pdf
+products/identity/Research/2023-04 Proactive CSP Migration/2023-04 Proactive CSP Migration research findings.md
+products/identity/Research/2023-06 Mocked Authentication/Mocked Authentication research findings.md
+products/identity/Research/2023-07 Terms of Use/2023-08 Terms of use research findings.md
+products/identity/Research/2023-11 Manage Signed-in Devices/2023-11 Manage Signed-in Devices Research Findings.md
+products/identity/Research/2024-01 Identity Support Process/2024-01 Identity Support Process - Research Share Out.md
+products/identity/Research/2024-03 Service Level Objectives/Content research for Veterans.md
+products/identity/Research/2024-03 Service Level Objectives/Content-research-internal-teams.md
+products/identity/Research/2024-03 Service Level Objectives/content-research-authentication-status-communication-to-veterans.pdf
+products/identity/Research/2024-03 Service Level Objectives/content-research-authentication-status-internal-communication.pdf
+products/identity/Research/2024-04 FE Sign in Flows/Front end sign in flow - discovery research.md
+products/identity/Research/2024-08 Analytics/2024-08 Google Analytics identity related findings.md
+products/identity/Research/2024-08 Sign in transition/2024-08 Research Findings.md
+products/identity/Research/login.gov/Sign-In Accessibility/Sign-in_Accessibilty_Research_Findings.md
+products/identity/Research/login.gov/Sign-In Accessibility/SignIn Redesign-Research-Findings-Synthesis.md
+products/identity/Research/login.gov/Login.gov-Research-Findings-Synthesis.md
+products/identity/Research/login.gov/Login.gov-Sign-In-Attributes-Card-Sort-Research-Findings.md
+products/identity/login/mhv/mhv-account-creation_2017/research/research-findings2.md
+products/identity/login/mhv/mhv-account-creation_2017/research/researchfindings.md
+products/identity/login/sso/ux-research/alerts/research-summary.md
+products/information-architecture/research-and-analytics/2023-generative-logged-in-research/analytics-review-findings.md
+products/information-architecture/research-and-analytics/2023-generative-logged-in-research/qualitative-data-findings.md
+products/information-architecture/research-and-analytics/2023-generative-logged-in-research/research-review-findings.md
+products/iris/research/discovery-interviews/iris-research-report-discovery-phase.md
+products/iris/research/usability-testing/IRIS Usability Testing Research Report Fall 2020.md
+products/live-agent/research/2023-07-Live Agent Chatbot/Research Findings & Summaries [Phase 1].pdf.zip
+products/live-agent/research/2023-07-Live Agent Chatbot_Interviews with Veterans/Research Findings & Summaries [Phase 1].pdf.zip
+products/live-agent/research/2023-07-Live Agent Chatbot_Interviews with Veterans/research-findings.md
+products/login.gov-adoption/discovery/research/Identity Discovery_Sprint 4_WIP-Non-Veteran User Roles_10-12-22.pptx.pdf
+products/login.gov-adoption/discovery/research/Login.gov Adoption Discovery_ OCC on 12 January 2023.pdf
+products/login.gov-adoption/discovery/research/discovery readout for identity working group 15 december.pdf
+products/login.gov-adoption/in-person-proofing/research/2024-03_Pilot/Research Findings/IPP Pilot Research Findings High Level Summary.md
+products/live-agent/research/2023-07-Live Agent Chatbot/conversation-guide.md
+products/medical-device-tool/research/usability-march20/research-readout.md
+products/medical-device-tool/research/hearing-aids-research.md
+products/office-administration/offices/research/OPIA-Administration research - discovery - March 2019/20190313_VA.govCMS_office_modGuide_externaluserResearch_1.docx
+products/office-administration/offices/research/OPIA-Administration research - discovery - March 2019/20190320_VAgov_CMS_Office_Round1readout.pdf
+products/on-site-search/research/audit/Search & Discovery 2020 Audit Summary.pdf
+products/on-site-search/research/audit/VA.gov Search Analysis Report - 2020.pdf
+products/on-site-search/research/user-research/2021-Aug-research-study/research-findings.md
+products/on-site-search/research/user-research/research-study-jan-2021/research-findings.md
+products/outreach-events/research/2021-filtering-recurring-events/research-findings.md
+products/outreach-events/research/2024-Medallia-feedback/findings-summary.md
+products/pact-act-wizard/research/2023-2024-launch/research-findings.md
+products/platform/login-self-service-tool/research/2022-Q3/research-findings.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#1.researchstudy-notes.20201118.md
+products/platform/medallia/research/CY21-Q1/session-notes/Participant#01.researchstudy-notes.20210203.md
+products/platform/platform-website/research/forms-library-docs-research-2020/research-summary.md
+products/platform/platform-website/research/research-round-1/results-summary.md
+products/platform/platform-website/research/research-round-2/results-summary.md
+products/platform/research/roe-documentation/Research Readout.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#9.researchstudy-notes.20201124.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#2.researchstudy-notes.20201119.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#3.researchstudy-notes.20201119.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#4.researchstudy-notes.20201119.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#5.researchstudy-notes.20201120.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#6.researchstudy-notes.20201120.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#7.researchstudy-notes.20201123.md
+products/platform/medallia/research/CY20-Q4/session-notes/Participant#8.researchstudy-notes.20201123.md
+products/proactive-benefits/research/2023-11-Outreach Exploration/research-findings.md
+products/resources-for-schools/research/research findings summary.md
+products/streamlined_waiver/research/research-findings.md
+products/streamlined_waiver/accessibility_research/research-findings.md
+products/streamlined_waiver/research/research-findings.md
+products/va-mobile-app/ux-research/Co-branding research/Research-Summary.md
+products/va-notify/research/2023-10-Email-Content-Research/Email Content Research Findings.md
+products/va-notify/research/Sample Template Research Findings.md
+products/va-notify/research/Email Content Research Findings.md
+products/va-notify/research/notifications-research-report.md
+products/va-notify/research/self-service-research-report.md
+products/verify-your-enrollment/research-folder/2023-11-Research-Initiative-One/2024.03 VYE unmoderated research report.md
+products/verify-your-enrollment/research-folder/2023-11-Research-Initiative-One/2024.03 VYE unmoderated research report
+products/veteran-id-cards/landing-page/results-summary.md
+products/veteran-military-records/dd214/prediscovery-findings.md
+products/veteran-id-cards/research/discovery/research-plan.md
+products/veteran-onboarding/research/research findings.md
+products/veteran-status/v1/Research/2023-12-VetStatus-Use-Case-Discovery/2023-12-Findings.md
+products/veteran-status/v1/Research/2023-12-VetStatus-Use-Case-Discovery/2023-12-Findings.md
+products/virtual-agent/research/claims-and-automated-content-study/research-report.md
+products/virtual-agent/research/controlled-study/research-report.md
+products/virtual-agent/research/inclusive-design-interviews/report.md
+products/virtual-agent/research/non-auth to auth/Authorization Flow Research UT Findings 2022-03-25.pptx
+products/virtual-agent/research/spanish speaking veterans/Spanish Speaking Veterans Research Report.pdf
