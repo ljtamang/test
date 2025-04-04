@@ -1,12 +1,22 @@
 SELECT 
-  category AS doc_type,
+  -- Extract PRODUCT NAME (2nd path segment after 'products/')
+  REGEXP_EXTRACT(
+    file_relative_path, 
+    'products/([^/]+)', 
+    1
+  ) AS "PRODUCT NAME",
+  
+  -- Display relative path but make it a clickable URL in Excel
+  file_relative_path AS "QUICK link to Research Plan",
+  
+  -- Hidden column with full URL (for Excel hyperlink formula)
   CONCAT(
     'https://github.com/department-of-veterans-affairs/va.gov-team/blob/master/',
     TRIM(LEADING '/' FROM file_relative_path)
-  ) AS file_path
+  ) AS "hidden_url"
 FROM 
   vfs_raw.target_file_metadata
 WHERE 
-  category IN ('research_plan', 'research_findings')
+  category = 'research_plan'
 ORDER BY 
-  doc_type  -- This sorts by the output alias
+  "PRODUCT NAME"
