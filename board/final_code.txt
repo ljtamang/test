@@ -18,8 +18,8 @@ def normalize_filename(filename: str) -> str:
     """
     Normalize filename to a consistent format for comparison.
     
-    Converts to lowercase, removes hyphens, replaces underscores with spaces,
-    and normalizes whitespace.
+    Converts to lowercase, replaces hyphens and underscores with spaces,
+    and removes duplicate spaces.
     
     Args:
         filename: Input filename to be normalized
@@ -28,7 +28,7 @@ def normalize_filename(filename: str) -> str:
         Normalized filename string
     """
     normalized = filename.lower()
-    normalized = normalized.replace('-', '').replace('_', ' ')
+    normalized = normalized.replace('-', ' ').replace('_', ' ')
     normalized = ' '.join(normalized.split())
     return normalized
 
@@ -83,8 +83,7 @@ def tag_as_research_plan(file_path: str, min_threshold: int = MIN_PLAN_SCORE) ->
     """
     penalty_keywords = {'guide', 'findings', 'report', 'summary'}
     priority_keywords = [
-        'research plan', 'researchplan', 'research plan', 
-        'uat plan', 'research plan ', 'research plan ', 'researchplan '
+        'research plan', 'researchplan', 'uat plan', 'research plan'
     ]
     
     filename = normalize_filename(Path(file_path).name)
@@ -148,8 +147,7 @@ def tag_as_research_findings(file_path: str, min_threshold: int = MIN_FINDINGS_S
     """
     penalty_keywords = {'plan', 'guide', 'readme'}
     priority_keywords = [
-        'research findings', 'researchfindings',
-        'research findings', 'findings', 'result', 'results'
+        'research findings', 'researchfindings', 'findings', 'result', 'results'
     ]
     
     filename = normalize_filename(Path(file_path).name)
@@ -213,8 +211,7 @@ def tag_as_guide(file_path: str, min_threshold: int = MIN_GUIDE_SCORE) -> Option
     """
     penalty_keywords = {'plan', 'findings', 'report'}
     priority_keywords = [
-        'conversation guide', 'convo guide', 'conversation guide',
-        'convo guide', 'interview guide', 'discussion guide'
+        'conversation guide', 'convo guide', 'interview guide', 'discussion guide'
     ]
     
     filename = normalize_filename(Path(file_path).name)
