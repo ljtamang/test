@@ -447,3 +447,32 @@ if __name__ == "__main__":
         "path/to/findings1.md",
         "path/to/guide1.md",
         "path/to/unknown
+
+
+
+# Modified test_accuracy function to match the provided filenames
+def test_accuracy(test_files_dir: str) -> Dict[str, Any]:
+    """
+    Test classification accuracy by reading test file paths from text files and fetching content from GitHub.
+    
+    Args:
+        test_files_dir: Directory containing the test files (plan_path.txt, findings_path.txt, guide_path.txt)
+        
+    Returns:
+        Dictionary containing accuracy results for each category
+    """
+    # Read test file paths
+    def read_test_paths(filename):
+        try:
+            with open(os.path.join(test_files_dir, filename), 'r') as f:
+                return [line.strip() for line in f if line.strip()]
+        except FileNotFoundError:
+            print(f"Warning: Test file {filename} not found")
+            return []
+    
+    plan_paths = read_test_paths("plan_path.txt")
+    findings_paths = read_test_paths("findings_path.txt")
+    guide_paths = read_test_paths("guide_path.txt")
+    
+    # Rest of the function remains the same...
+    # [Previous implementation continues]
