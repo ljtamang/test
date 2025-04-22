@@ -1,91 +1,112 @@
-import spacy
 import re
 
-def redact_address_components(text):
+def redact_ssn(text):
     """
-    Redact specific components of addresses while preserving city, state, and country names.
+    Identify and redact US Social Security Numbers in various formats.
+    
+    This function recognizes and redacts SSNs in the following formats:
+    - XXX-XX-XXXX (standard hyphenated format)
+    - XXXXXXXXX (9 continuous digits)
+    - XXX XX XXXX (space-separated format)
+    - XXX.XX.XXXX (period-separated format)
+    - Last 4 digits only when prefixed with appropriate context
     
     Args:
-        text (str): Input text containing addresses
+        text (str): Text that may contain SSNs
         
     Returns:
-        str: Text with specific address components redacted
+        str: Text with SSNs redacted
     """
-    # Load spaCy model
-    nlp = spacy.load("en_core_web_lg")
-    
-    # Process the text
-    doc = nlp(text)
-    
-    # Create a copy of the text that we'll modify
+    # Copy the text for redaction
     redacted_text = text
     
-    # Regular expressions for address components
-    street_number_pattern = r'\b\d+\s'  # Street numbers
-    zip_code_pattern = r'\b\d{5}(?:-\d{4})?\b'  # ZIP codes (5 digit or 9 digit format)
-    apt_pattern = r'\b(?:apt|apartment|suite|unit|#)\s*[\w-]+\b'  # Apartment/suite numbers
-    po_box_pattern = r'\b(?:p\.?o\.?\s*box|post\s*office\s*box)\s*[\w-]+\b'  # PO Boxes
+    # Standard hyphenated SSN format (XXX-XX-XXXX)
+    hyphenated_pattern = r'\b\d{3}-\d{2}-\d{4}\b'
     
-    # More comprehensive street name pattern - matches common street suffixes
-    street_name_pattern = r'\b[A-Za-z\'\s]+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Lane|Ln|Road|Rd|Court|Ct|Way|Place|Pl|Circle|Cir|Terrace|Ter|Highway|Hwy|Parkway|Pkwy|Alley|Route|Rt)\b'
+    # Continuous 9-digit SSN (XXXXXXXXX)
+    # Only match if surrounded by word boundaries to avoid catching other 9-digit numbers
+    continuous_pattern = r'\b\d{9}\b'
     
-    # Find all GPE (geopolitical entities) to preserve cities, states, and countries
-    gpe_spans = [ent for ent in doc.ents if ent.label_ == "GPE"]
-    gpe_spans_ranges = [(ent.start_char, ent.end_char) for ent in gpe_spans]
+    # Space-separated SSN format (XXX XX XXXX)
+    space_pattern = r'\b\d{3}\s\d{2}\s\d{4}\b'
     
-    # Redact street numbers
-    redacted_text = re.sub(street_number_pattern, "[REDACTED-NUM] ", redacted_text, flags=re.IGNORECASE)
+    # Period-separated SSN format (XXX.XX.XXXX)
+    period_pattern = r'\b\d{3}\.\d{2}\.\d{4}\b'
     
-    # Redact street names using the comprehensive pattern
-    for match in re.finditer(street_name_pattern, redacted_text, re.IGNORECASE):
-        is_in_gpe = False
-        # Check if this street name is part of a GPE (city, state, country)
-        for start, end in gpe_spans_ranges:
-            if (match.start() < end and match.end() > start):
-                is_in_gpe = True
-                break
+    # Last 4 digits with context pattern
+    # Match phrases like "SSN ending in 1234" or "last four of SSN: 1234"
+    last_four_pattern = r'(?:ssn|social\s+security|social\s+security\s+number)(?:[^0-9]+)(?:ending[\s:]+in|last[\s:]+four[\s:]+(?:digits[\s:]+)?(?:of)?|:|\#)\s*\d{4}\b'
+    
+    # Combined pattern for SSN validation (after initial match)
+    # This helps filter out false positives by validating the number structure
+    def is_valid_ssn(ssn_candidate):
+        # Remove any non-digits
+        digits_only = ''.join(c for c in ssn_candidate if c.isdigit())
         
-        if not is_in_gpe:
-            # This is a street name not part of a GPE
-            original = match.group()
-            replacement = "[REDACTED-STREET]"
-            start, end = match.span()
-            redacted_text = redacted_text[:start] + replacement + redacted_text[end:]
-    
-    # Redact ZIP codes
-    for match in re.finditer(zip_code_pattern, redacted_text):
-        is_in_gpe = False
-        for start, end in gpe_spans_ranges:
-            if (match.start() < end and match.end() > start):
-                is_in_gpe = True
-                break
+        # SSN can't be all zeros in each group
+        if digits_only[:3] == '000' or digits_only[3:5] == '00' or digits_only[5:] == '0000':
+            return False
+            
+        # First 3 digits can't be 666 and can't be in range 900-999
+        if digits_only[:3] == '666' or digits_only[:3] >= '900':
+            return False
+            
+        # Valid SSN should have 9 digits
+        if len(digits_only) != 9:
+            return False
+            
+        return True
         
-        if not is_in_gpe:
-            original = match.group()
-            replacement = "[REDACTED-ZIP]"
+    # Find and redact standard hyphenated SSNs
+    for match in re.finditer(hyphenated_pattern, redacted_text, re.IGNORECASE):
+        if is_valid_ssn(match.group()):
             start, end = match.span()
-            redacted_text = redacted_text[:start] + replacement + redacted_text[end:]
+            redacted_text = redacted_text[:start] + "[REDACTED-SSN]" + redacted_text[end:]
     
-    # Redact apartment/building numbers
-    redacted_text = re.sub(apt_pattern, "[REDACTED-APT]", redacted_text, flags=re.IGNORECASE)
+    # Find and redact continuous 9-digit SSNs
+    for match in re.finditer(continuous_pattern, redacted_text, re.IGNORECASE):
+        # Extra validation to avoid catching phone numbers, zip+4, etc.
+        # Look for context that suggests this is an SSN
+        start, end = match.span()
+        context_before = redacted_text[max(0, start-30):start].lower()
+        if is_valid_ssn(match.group()) and ('ssn' in context_before or 'social' in context_before or 'security' in context_before):
+            redacted_text = redacted_text[:start] + "[REDACTED-SSN]" + redacted_text[end:]
     
-    # Redact PO Boxes
-    redacted_text = re.sub(po_box_pattern, "[REDACTED-PO-BOX]", redacted_text, flags=re.IGNORECASE)
+    # Find and redact space-separated SSNs
+    for match in re.finditer(space_pattern, redacted_text, re.IGNORECASE):
+        if is_valid_ssn(match.group()):
+            start, end = match.span()
+            redacted_text = redacted_text[:start] + "[REDACTED-SSN]" + redacted_text[end:]
+    
+    # Find and redact period-separated SSNs
+    for match in re.finditer(period_pattern, redacted_text, re.IGNORECASE):
+        if is_valid_ssn(match.group()):
+            start, end = match.span()
+            redacted_text = redacted_text[:start] + "[REDACTED-SSN]" + redacted_text[end:]
+    
+    # Find and redact last 4 digits with context
+    for match in re.finditer(last_four_pattern, redacted_text, re.IGNORECASE):
+        start, end = match.span()
+        redacted_text = redacted_text[:start] + "[REDACTED-SSN-REFERENCE]" + redacted_text[end:]
     
     return redacted_text
 
 # Example usage
 if __name__ == "__main__":
-    # Sample text with addresses, including your example
     sample_text = """
-    John lives at 123 Main Street, Apt 4B, New York, NY 10001, USA.
-    The company headquarters is at 456 Business Avenue, Suite 200, Chicago, IL 60601.
-    Send your mail to P.O. Box 789, Los Angeles, CA 90001.
-    I live at 178 Willow Drive, Apt 3, Memphis, TN, 38124.
-    We're opening a new store in Seattle, Washington next month.
+    Here are some examples of SSNs in different formats:
+    Standard format: 413-61-5150
+    Continuous digits: 413615150
+    Space separated: 413 61 5150
+    Period separated: 413.61.5150
+    With context: My SSN is 413-61-5150
+    Last four only: My SSN ending in 5150
+    Social Security Number: 413-61-5150
+    Invalid example that shouldn't match: 12345 (too short)
+    Another invalid example: 000-00-0000 (all zeros)
     """
     
-    redacted = redact_address_components(sample_text)
+    redacted = redact_ssn(sample_text)
     print("Original Text:")
     print(sample_text)
     print("\nRedacted Text:")
