@@ -7,7 +7,7 @@ def remove_ssn(text):
     Handles standard formats like XXX-XX-XXXX, XXXXXXXXX, XXX XX XXXX
     and also handles last 4 digits only (XXXX) when context indicates it's an SSN.
     
-    Replaces all detected SSNs with [SSN].
+    Replaces only the SSN part with [SSN], not surrounding context.
     Case-insensitive matching for all context patterns.
     """
     # Load a spaCy model
@@ -18,12 +18,13 @@ def remove_ssn(text):
     
     # Pattern for full SSN in different formats
     # SSN formats: XXX-XX-XXXX, XXX XX XXXX, XXXXXXXXX
-    ssn_pattern = r'\b(?:\d{3}[-\s]?\d{2}[-\s]?\d{4})\b'
+    ssn_pattern = r'\b(\d{3}[-\s]?\d{2}[-\s]?\d{4})\b'
     
-    # Get the indices of all SSN matches
+    # Get the indices of all SSN matches - capture only the SSN part in group 1
     ssn_matches = list(re.finditer(ssn_pattern, text))
     
     # Enhanced patterns for last 4 digits with common contexts - all case insensitive
+    # The crucial part is to use capturing groups () only around the actual digits we want to replace
     last4_indicators = [
         # Common ways to reference SSN last 4
         r'(?:ssn|social security|ss#).*?(?:ending|last).*?(\d{4})\b',
@@ -49,28 +50,31 @@ def remove_ssn(text):
         r'enter.*?last\s+four.*?(?:ssn|social).*?(\d{4})'
     ]
     
-    # Collect all last 4 matches with context - using re.IGNORECASE flag for case insensitivity
-    last4_matches = []
-    for pattern in last4_indicators:
-        last4_matches.extend(list(re.finditer(pattern, text, re.IGNORECASE)))
-    
-    # Combine all matches
-    all_matches = ssn_matches + last4_matches
-    
-    # Sort matches by their start position (in reverse order so replacement doesn't affect indices)
-    all_matches.sort(key=lambda x: x.start(), reverse=True)
-    
-    # Replace each match with [SSN]
+    # Collect all matches and process them
     result = text
-    for match in all_matches:
-        start, end = match.span()
-        result = result[:start] + "[SSN]" + result[end:]
+    
+    # Process full SSN matches first
+    for match in ssn_matches:
+        full_match = match.group(0)  # The entire matched string
+        ssn_only = match.group(1)    # Just the SSN part (captured in group 1)
+        
+        # Replace only the SSN part
+        result = result.replace(ssn_only, "[SSN]")
+    
+    # Process last 4 digit matches
+    for pattern in last4_indicators:
+        for match in re.finditer(pattern, result, re.IGNORECASE):
+            if match.groups():  # Ensure there's a capturing group
+                last_four = match.group(1)  # The captured group (just the 4 digits)
+                
+                # Replace only those 4 digits, not the whole match
+                result = result.replace(last_four, "[SSN]")
     
     return result
 
 # Test the function
 if __name__ == "__main__":
-    # Test with different SSN formats, including mixed case
+    # Test with different SSN formats, including problematic cases
     test_texts = [
         "My SSN is 123-45-6789",
         "ssn: 123 45 6789",
@@ -83,6 +87,7 @@ if __name__ == "__main__":
         "We have your ssn on file ending with 6789",
         "Enter the last four digits of your SOCIAL: 6789",
         "ssn: ***-**-6789",
+        "For my SSN number is 456-78-4567. I work at James VA",  # The problematic case
         "Phone: 555-123-4567",  # Should not be redacted
         "DOB: 01-15-2000",      # Should not be redacted
         "ZIP: 12345",           # Should not be redacted
