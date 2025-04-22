@@ -8,6 +8,7 @@ def remove_ssn(text):
     and also handles last 4 digits only (XXXX) when context indicates it's an SSN.
     
     Replaces all detected SSNs with [SSN].
+    Case-insensitive matching for all context patterns.
     """
     # Load a spaCy model
     nlp = spacy.load("en_core_web_sm")
@@ -22,7 +23,7 @@ def remove_ssn(text):
     # Get the indices of all SSN matches
     ssn_matches = list(re.finditer(ssn_pattern, text))
     
-    # Enhanced patterns for last 4 digits with common contexts
+    # Enhanced patterns for last 4 digits with common contexts - all case insensitive
     last4_indicators = [
         # Common ways to reference SSN last 4
         r'(?:ssn|social security|ss#).*?(?:ending|last).*?(\d{4})\b',
@@ -48,10 +49,10 @@ def remove_ssn(text):
         r'enter.*?last\s+four.*?(?:ssn|social).*?(\d{4})'
     ]
     
-    # Collect all last 4 matches with context
+    # Collect all last 4 matches with context - using re.IGNORECASE flag for case insensitivity
     last4_matches = []
     for pattern in last4_indicators:
-        last4_matches.extend(list(re.finditer(pattern, text.lower())))
+        last4_matches.extend(list(re.finditer(pattern, text, re.IGNORECASE)))
     
     # Combine all matches
     all_matches = ssn_matches + last4_matches
@@ -69,19 +70,19 @@ def remove_ssn(text):
 
 # Test the function
 if __name__ == "__main__":
-    # Test with different SSN formats
+    # Test with different SSN formats, including mixed case
     test_texts = [
         "My SSN is 123-45-6789",
-        "SSN: 123 45 6789",
+        "ssn: 123 45 6789",
         "Social Security Number 123456789",
-        "SSN ending in 6789",
-        "My social security's last four digits are 6789",
-        "Social Security: XXX-XX-6789",
-        "Please verify your SSN with the last four: 6789",
-        "For identification, please provide your SSN ending in 6789",
-        "We have your SSN on file ending with 6789",
-        "Enter the last four digits of your social: 6789",
-        "SSN: ***-**-6789",
+        "Ssn ending in 6789",
+        "My SOCIAL SECURITY's last four digits are 6789",
+        "social Security: XXX-XX-6789",
+        "Please verify your sSn with the last four: 6789",
+        "For identification, please provide your Ssn ending in 6789",
+        "We have your ssn on file ending with 6789",
+        "Enter the last four digits of your SOCIAL: 6789",
+        "ssn: ***-**-6789",
         "Phone: 555-123-4567",  # Should not be redacted
         "DOB: 01-15-2000",      # Should not be redacted
         "ZIP: 12345",           # Should not be redacted
