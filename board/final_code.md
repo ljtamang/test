@@ -92,10 +92,143 @@ These questions test the limitations of RAG systems with numerical calculations 
 **Your Observation:** 
 [Record the actual RAG response here]
 
-#### B2. Basic Facility Average
+#### B2. Weekly Min/Max/Average Scores
 
-**Question:** "What is the average satisfaction score for Battle Creek VA Medical Center?"
+**Question:** "What were the minimum, maximum, and average satisfaction scores for Battle Creek VA Medical Center during the first week of January 2025 (Jan 1-7)?"
 
-**Expected Answer:** 3.24 (Sum of all satisfaction scores for Battle Creek divided by 29 records)
+**Expected Answer:** 
+- Minimum: 2 (from comment_id: 2, Jan 2)
+- Maximum: 5 (from comment_id: 4, Jan 4)
+- Average: 3.2 (Sum of scores: 4+2+3+5+1 = 15, divided by 5 = 3.0)
 
-**Why RAG Will Struggle:** While this calculation seems simple, RAG systems often make errors in mathematical operations. The system needs to accurately identify all relevant records, extract the numerical values, and perform the calculation without error. Even small mistakes in counting or addition can lead to incorrect results. More importantly, as demonstrated in question B1, the system often doesn't retrieve all relevant records, leading to calculations based on incomplete
+**Why RAG Will Struggle:** This question requires multiple steps that challenge RAG systems:
+1. Filtering by date range (requiring datetime understanding)
+2. Filtering by facility
+3. Identifying min and max values across multiple records
+4. Calculating an average 
+The system must retrieve ALL relevant records within the date range, which is unlikely given retrieval limitations. Even small retrieval errors will lead to incorrect calculations.
+
+**Your Observation:** 
+[Record the actual RAG response here]
+
+#### B3. Monthly Facility Comparison
+
+**Question:** "Compare the average satisfaction scores for Outpatient services between all three facilities for January 2025."
+
+**Expected Answer:**
+- Battle Creek: 3.29 (Sum of scores: 4+2+3+5+2+3+4 = 23, divided by 7 = 3.29)
+- Ann Arbor: 3.29 (Sum of scores: 5+1+4+4+2+3+4 = 23, divided by 7 = 3.29)
+- Detroit: 3.14 (Sum of scores: 1+5+3+2+4+3+4 = 22, divided by 7 = 3.14)
+- Conclusion: All three facilities had similar average satisfaction scores for Outpatient services in January, with Battle Creek and Ann Arbor slightly higher than Detroit.
+
+**Why RAG Will Struggle:** This requires filtering by month, survey type, and facility, then performing calculations for each group. The system needs to:
+1. Correctly identify all January records for each facility
+2. Filter for only Outpatient service types
+3. Calculate three separate averages
+4. Compare the results
+Multiple calculation steps combined with retrieval limitations make this type of comparison particularly challenging for RAG systems.
+
+**Your Observation:** 
+[Record the actual RAG response here]
+
+#### B4. Quarterly Min/Max by Survey Type
+
+**Question:** "What were the minimum and maximum trust scores for Inpatient services at each facility during Q1 2025?"
+
+**Expected Answer:**
+- Battle Creek:
+  - Minimum: 1 (from comment_id: 59)
+  - Maximum: 5 (from comment_id: 58)
+- Ann Arbor:
+  - Minimum: 1 (from comment_id: 65)
+  - Maximum: 5 (from comment_id: 62)
+- Detroit:
+  - Minimum: 2 (from comments 67 and 70)
+  - Maximum: 5 (from comments 66 and 69)
+
+**Why RAG Will Struggle:** This question combines multiple challenging aspects:
+1. Filtering by quarter (requiring date range understanding)
+2. Filtering by survey type
+3. Grouping by facility
+4. Finding min/max values for each group
+The system would need to correctly retrieve and analyze all 13 inpatient records, which is unlikely given retrieval limitations. Additionally, comparing across multiple facilities adds complexity.
+
+**Your Observation:** 
+[Record the actual RAG response here]
+
+#### B5. Trend Analysis Over Time
+
+**Question:** "How did the average satisfaction scores for Outpatient services at Detroit VA Medical Center change from January to March 2025?"
+
+**Expected Answer:**
+- January: 3.14 (Sum: 1+5+3+2+4+3+4 = 22, Count: 7, Average: 3.14)
+- February: 3.29 (Sum: 1+5+3+2+4+4 = 19, Count: 6, Average: 3.17)
+- March: 3.5 (Sum: 5+3+3+4+2+4 = 21, Count: 6, Average: 3.5)
+- Trend: Gradual improvement in satisfaction scores across the quarter, with March showing the highest average satisfaction.
+
+**Why RAG Will Struggle:** This question requires:
+1. Filtering by facility and service type
+2. Grouping by month
+3. Calculating averages for each month
+4. Identifying the trend direction
+The time-series aspect makes this particularly difficult for RAG systems, as they typically don't maintain context about trends across multiple calculation steps. The system would need to correctly retrieve all 19 relevant records and perform three separate calculations, which is unlikely.
+
+**Your Observation:** 
+[Record the actual RAG response here]
+
+#### B6. Cross-Dimensional Analysis
+
+**Question:** "What's the correlation between trust scores and satisfaction scores for Outpatient services across all facilities?"
+
+**Expected Answer:** There is a strong positive correlation (approximately 0.94) between trust scores and satisfaction scores for Outpatient services. When trust scores are high, satisfaction scores are typically high as well, and vice versa.
+
+**Why RAG Will Struggle:** This question requires statistical analysis that RAG systems are simply not designed to perform:
+1. Calculating a correlation coefficient requires a specific mathematical formula
+2. The system would need to retrieve ALL pairs of trust and satisfaction scores (which is unlikely given retrieval limitations)
+3. Even with all the data, RAG systems don't have built-in statistical functions to compute correlations
+This type of analysis is far beyond what typical RAG implementations can handle reliably.
+
+**Your Observation:** 
+[Record the actual RAG response here]
+
+## 3. Testing the Pre-Computation Solution
+
+After testing the questions above and documenting the limitations, you can demonstrate how pre-computation improves results:
+
+1. **Create a pre-computed statistics document:**
+   - Create a text file with calculated statistics like:
+   ```
+   Battle Creek VA Medical Center Statistics:
+   - Total survey responses: 29
+   - Outpatient responses by month: January (7), February (7), March (7)
+   - Monthly average satisfaction scores (Outpatient): January (3.29), February (3.14), March (3.29)
+   - Weekly min/max satisfaction scores (first week of January): Min (2), Max (5), Average (3.0)
+   ...
+   ```
+
+2. **Upload this document alongside your raw data**
+
+3. **Test the same questions again:**
+   - Ask questions B2-B5 again
+   - Document if the system can now retrieve and report the pre-computed statistics
+
+## 4. Summary and Observations
+
+After completing your testing, use this section to document key findings:
+
+1. **Retrieval Limitations:**
+   - Did the system consistently retrieve all relevant records for questions?
+   - At what point did comprehensive retrieval break down?
+
+2. **Calculation Accuracy:**
+   - How accurate were simple calculations?
+   - How accurate were complex multi-step calculations?
+
+3. **Pre-computation Effectiveness:**
+   - Did pre-computed statistics improve accuracy?
+   - What types of questions still posed challenges even with pre-computation?
+
+4. **Recommendations for Implementation:**
+   - Which types of questions should rely on RAG?
+   - Which types should use traditional analytics?
+   - What pre-computed statistics would be most valuable?
