@@ -1,4 +1,3 @@
-```csv
 comment_id,surveytype,facility_name,responsedate,trust,satisfaction,helpfulness,comment,sentiment,topics
 1,Outpatient,Battle Creek VA Medical Center,2025-01-01 09:30:42,4,4,4,"The staff at the reception desk were very helpful. They guided me through the whole check-in process and answered all my questions patiently. Wait time was minimal.",Positive,Staff helpfulness;Wait time
 2,Outpatient,Battle Creek VA Medical Center,2025-01-02 13:45:21,2,2,3,"I had to wait over 2 hours to see the doctor. The nurses were nice but the overall wait time is unacceptable. I had to reschedule my other appointments because of this delay.",Negative,Wait time;Staff shortage
@@ -88,4 +87,3 @@ comment_id,surveytype,facility_name,responsedate,trust,satisfaction,helpfulness,
 86,BTSS,Detroit VA Medical Center,2025-01-25 09:40:15,4,4,4,"The transition support team was helpful and patient. They walked me through each step of the process and helped me fill out the complex paperwork. Very appreciative of their assistance.",Positive,Staff helpfulness;Administrative process
 87,BTSS,Detroit VA Medical Center,2025-02-25 11:25:33,3,3,3,"Benefits information was clear but employment assistance needs improvement. More partnerships with local businesses would be beneficial for transitioning veterans.",Neutral,Benefits information;Employment assistance
 88,BTSS,Detroit VA Medical Center,2025-03-25 14:50:22,4,4,5,"The transition program has improved significantly. New staff seems better trained and the process is more streamlined. The employment workshops have been particularly helpful.",Positive,Staff training;Administrative process;Employment assistance
-```
