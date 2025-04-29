@@ -1,101 +1,91 @@
-import re
-import spacy
-
-def remove_ssn(text):
-    """
-    Remove Social Security Numbers in various formats from text.
-    Handles standard formats like XXX-XX-XXXX, XXXXXXXXX, XXX XX XXXX
-    and also handles last 4 digits only (XXXX) when context indicates it's an SSN.
-    
-    Replaces only the SSN part with [SSN], not surrounding context.
-    Case-insensitive matching for all context patterns.
-    """
-    # Load a spaCy model
-    nlp = spacy.load("en_core_web_sm")
-    
-    # Process the text to analyze it
-    doc = nlp(text)
-    
-    # Pattern for full SSN in different formats
-    # SSN formats: XXX-XX-XXXX, XXX XX XXXX, XXXXXXXXX
-    ssn_pattern = r'\b(\d{3}[-\s]?\d{2}[-\s]?\d{4})\b'
-    
-    # Get the indices of all SSN matches - capture only the SSN part in group 1
-    ssn_matches = list(re.finditer(ssn_pattern, text))
-    
-    # Enhanced patterns for last 4 digits with common contexts - all case insensitive
-    # The crucial part is to use capturing groups () only around the actual digits we want to replace
-    last4_indicators = [
-        # Common ways to reference SSN last 4
-        r'(?:ssn|social security|ss#).*?(?:ending|last).*?(\d{4})\b',
-        r'(?:ending|last).*?(?:ssn|social security|ss#).*?(\d{4})\b',
-        r'(?:ssn|social security|ss#).*?[-:]\s*[Xx*]{5}[-\s]?(\d{4})\b',
-        r'(?:ssn|social security|ss#).*?[-:]\s*(\d{4})\b',
-        
-        # Additional standard contexts
-        r'last\s+four\s+(?:digits\s+)?(?:of\s+)?(?:your\s+)?(?:ssn|social security).*?(\d{4})\b',
-        r'(?:ssn|social security).*?last\s+four\s+(?:digits)?.*?(\d{4})\b',
-        r'(?:ssn|social security|ss)[\s#-]*\d{3}[\s-]*\d{2}[\s-]*(\d{4})',
-        r'(?:ssn|social security|ss)\s*#*\s*[Xx*]{3}[\s-]*[Xx*]{2}[\s-]*(\d{4})',
-        r'(?:ssn|social security)\s*(?:number)?\s*:?\s*[Xx*]{3}[\s-]*[Xx*]{2}[\s-]*(\d{4})',
-        r'(?:ssn|ss#)[\s:-]*(\d{4})',
-        r'(?:verify|verification|confirm).*?(?:ssn|social security).*?(\d{4})',
-        r'(?:ssn|social security).*?(?:verify|verification|confirm).*?(\d{4})',
-        r'(?:identification|id).*?(?:ssn|social security).*?(\d{4})',
-        r'(?:ssn|social security).*?on\s+file.*?(\d{4})',
-        r'on\s+file.*?(?:ssn|social security).*?(\d{4})',
-        r'ssn\s*ending\s*in\s*(\d{4})',
-        r'social\s+security\s*ending\s*in\s*(\d{4})',
-        r'provide.*?last\s+four.*?(?:ssn|social).*?(\d{4})',
-        r'enter.*?last\s+four.*?(?:ssn|social).*?(\d{4})'
-    ]
-    
-    # Collect all matches and process them
-    result = text
-    
-    # Process full SSN matches first
-    for match in ssn_matches:
-        full_match = match.group(0)  # The entire matched string
-        ssn_only = match.group(1)    # Just the SSN part (captured in group 1)
-        
-        # Replace only the SSN part
-        result = result.replace(ssn_only, "[SSN]")
-    
-    # Process last 4 digit matches
-    for pattern in last4_indicators:
-        for match in re.finditer(pattern, result, re.IGNORECASE):
-            if match.groups():  # Ensure there's a capturing group
-                last_four = match.group(1)  # The captured group (just the 4 digits)
-                
-                # Replace only those 4 digits, not the whole match
-                result = result.replace(last_four, "[SSN]")
-    
-    return result
-
-# Test the function
-if __name__ == "__main__":
-    # Test with different SSN formats, including problematic cases
-    test_texts = [
-        "My SSN is 123-45-6789",
-        "ssn: 123 45 6789",
-        "Social Security Number 123456789",
-        "Ssn ending in 6789",
-        "My SOCIAL SECURITY's last four digits are 6789",
-        "social Security: XXX-XX-6789",
-        "Please verify your sSn with the last four: 6789",
-        "For identification, please provide your Ssn ending in 6789",
-        "We have your ssn on file ending with 6789",
-        "Enter the last four digits of your SOCIAL: 6789",
-        "ssn: ***-**-6789",
-        "For my SSN number is 456-78-4567. I work at James VA",  # The problematic case
-        "Phone: 555-123-4567",  # Should not be redacted
-        "DOB: 01-15-2000",      # Should not be redacted
-        "ZIP: 12345",           # Should not be redacted
-        "Account: 123456789"    # Ambiguous, should not be redacted without context
-    ]
-    
-    for test in test_texts:
-        redacted = remove_ssn(test)
-        print(f"Original: {test}")
-        print(f"Redacted: {redacted}")
-        print("-" * 50)
+```csv
+comment_id,surveytype,facility_name,responsedate,trust,satisfaction,helpfulness,comment,sentiment,topics
+1,Outpatient,Battle Creek VA Medical Center,2025-01-01 09:30:42,4,4,4,"The staff at the reception desk were very helpful. They guided me through the whole check-in process and answered all my questions patiently. Wait time was minimal.",Positive,Staff helpfulness;Wait time
+2,Outpatient,Battle Creek VA Medical Center,2025-01-02 13:45:21,2,2,3,"I had to wait over 2 hours to see the doctor. The nurses were nice but the overall wait time is unacceptable. I had to reschedule my other appointments because of this delay.",Negative,Wait time;Staff shortage
+3,Outpatient,Battle Creek VA Medical Center,2025-01-03 10:12:33,3,3,3,"Doctor was knowledgeable but seemed rushed. I didn't get to ask all my questions during the appointment. The facility was clean though.",Neutral,Doctor interaction;Facility conditions
+4,Outpatient,Battle Creek VA Medical Center,2025-01-04 14:20:15,5,5,4,"Outstanding service today. The doctor spent extra time explaining my condition and treatment options. The new electronic check-in system is also much faster.",Positive,Doctor interaction;Technology;Service quality
+5,Outpatient,Battle Creek VA Medical Center,2025-01-05 11:22:10,1,2,2,"Appointment was scheduled for 9:30 but wasn't seen until 11:45. Receptionist was not apologetic about the delay. This happens every time I visit.",Negative,Wait time;Staff attitude
+6,Outpatient,Battle Creek VA Medical Center,2025-01-08 09:15:30,3,3,4,"The pharmacy service was efficient. I appreciate the text messages when prescriptions are ready for pickup. Waiting area could use more comfortable seating.",Neutral,Pharmacy;Facility conditions
+7,Outpatient,Battle Creek VA Medical Center,2025-01-15 10:45:22,4,4,5,"The telehealth option worked very well. Doctor was on time and the video quality was excellent. Saved me a 45-minute drive each way.",Positive,Telehealth;Technology
+8,Outpatient,Ann Arbor VA Medical Center,2025-01-02 10:05:29,5,5,5,"Dr. Johnson was excellent and took time to explain my condition and treatment options. The new facility is impressive and the check-in kiosks made the process quick and easy.",Positive,Doctor interaction;Facility conditions;Technology
+9,Outpatient,Ann Arbor VA Medical Center,2025-01-03 15:30:47,2,1,2,"Worst experience ever. Waited 3 hours past my appointment time. When I asked about the delay, the receptionist was dismissive and rude. Will not be returning to this location.",Negative,Wait time;Staff rudeness
+10,Outpatient,Ann Arbor VA Medical Center,2025-01-04 09:20:11,3,4,3,"The pharmacy service was efficient but the parking situation is terrible. Had to circle for 20 minutes to find a spot. Consider adding more disabled parking spaces.",Neutral,Pharmacy;Parking;Accessibility
+11,Outpatient,Ann Arbor VA Medical Center,2025-01-05 13:40:25,4,4,4,"Mental health services have improved dramatically. My therapist is attentive and the new group therapy rooms provide better privacy.",Positive,Mental health;Privacy;Facility improvements
+12,Outpatient,Ann Arbor VA Medical Center,2025-01-07 11:15:38,2,2,1,"The audiology department gave me incorrect information about my hearing aid warranty. Had to make three separate visits to resolve the issue.",Negative,Information accuracy;Administrative process
+13,Outpatient,Ann Arbor VA Medical Center,2025-01-08 16:25:42,3,3,4,"Lab work was quick and efficient. Staff was professional but the facility is showing its age in some areas.",Neutral,Lab services;Staff professionalism;Facility conditions
+14,Outpatient,Ann Arbor VA Medical Center,2025-01-15 10:30:17,5,4,5,"The physical therapy department is excellent. Staff is knowledgeable and equipment is state-of-the-art. Already seeing improvement after two sessions.",Positive,Physical therapy;Staff expertise;Medical equipment
+15,Outpatient,Detroit VA Medical Center,2025-01-02 08:45:19,1,1,1,"Absolutely terrible experience. Appointment was scheduled for 8:30 but wasn't seen until 11:00. The waiting room was overcrowded and uncomfortable. Staff seemed disorganized and unhelpful.",Negative,Wait time;Facility conditions;Staff helpfulness
+16,Outpatient,Detroit VA Medical Center,2025-01-03 13:22:51,4,5,4,"The mental health clinic staff was wonderful. My therapist is attentive and genuinely concerned about my progress. The new group therapy room is a great improvement.",Positive,Mental health;Staff care;Facility improvements
+17,Outpatient,Detroit VA Medical Center,2025-01-04 10:50:33,3,3,2,"The lab work was quick but the results took too long to get back to me. Had to call multiple times to follow up. Communication could be better.",Neutral,Lab services;Communication
+18,Outpatient,Detroit VA Medical Center,2025-01-05 14:35:21,2,2,3,"Referral process is too complicated. Been waiting 6 weeks for an appointment with a specialist. No updates on status despite multiple calls.",Negative,Referral process;Wait time;Communication
+19,Outpatient,Detroit VA Medical Center,2025-01-06 09:25:37,5,4,5,"The women's health clinic is excellent. Staff understands military-specific women's health issues. The private waiting area is much appreciated.",Positive,Women's health;Privacy;Staff understanding
+20,Outpatient,Detroit VA Medical Center,2025-01-07 11:40:15,3,3,3,"Standard visit, nothing exceptional. Doctor was knowledgeable but seemed rushed. Facility was clean.",Neutral,Doctor interaction;Facility conditions
+21,Outpatient,Detroit VA Medical Center,2025-01-15 14:15:29,4,4,4,"The new prescription management system is a huge improvement. I can now request refills online and track status. Technology improvements like this are greatly appreciated.",Positive,Pharmacy;Technology
+22,Outpatient,Battle Creek VA Medical Center,2025-02-01 11:15:43,5,4,5,"The telehealth option saved me a long drive. The doctor was punctual for our video appointment and the technology worked flawlessly. Great alternative for routine follow-ups.",Positive,Telehealth;Doctor interaction;Technology
+23,Outpatient,Battle Creek VA Medical Center,2025-02-02 14:30:22,1,2,1,"The appointment scheduling system is broken. I've been trying to get an appointment with a specialist for 3 months. The wait times are unacceptable for veterans who served our country.",Negative,Appointment scheduling;Wait time;Specialist access
+24,Outpatient,Battle Creek VA Medical Center,2025-02-03 10:20:35,3,3,3,"Routine checkup went as expected. Nothing particularly good or bad to report. Standard care.",Neutral,Routine care
+25,Outpatient,Battle Creek VA Medical Center,2025-02-04 13:45:19,4,4,4,"The new patient portal is excellent. I can view my medical records, appointments, and send messages to my healthcare team. Much more convenient.",Positive,Technology;Information access
+26,Outpatient,Battle Creek VA Medical Center,2025-02-07 09:30:28,2,1,2,"Staff seemed completely unprepared for my appointment. Had to explain my medical history multiple times to different people. Very frustrating experience.",Negative,Staff preparation;Administrative process
+27,Outpatient,Battle Creek VA Medical Center,2025-02-15 11:40:33,5,5,5,"Outstanding experience with the cardiology department. Dr. Reynolds spent nearly an hour reviewing my test results and explaining treatment options. Very thorough and caring.",Positive,Specialized care;Doctor interaction;Time spent
+28,Outpatient,Ann Arbor VA Medical Center,2025-02-01 10:45:39,4,3,4,"The physical therapy department is well-equipped and the therapists are knowledgeable. Seeing improvement after just a few sessions. Parking remains a challenge though.",Positive,Physical therapy;Staff expertise;Parking
+29,Outpatient,Ann Arbor VA Medical Center,2025-02-02 13:20:17,2,2,2,"The audiology department seems understaffed. Had to wait weeks for an appointment and then the actual visit felt rushed. My hearing aid still isn't working properly.",Negative,Staff shortage;Wait time;Medical equipment
+30,Outpatient,Ann Arbor VA Medical Center,2025-02-03 09:35:42,3,3,3,"Regular checkup went fine. The nurse was friendly and efficient. Doctor seemed knowledgeable but a bit hurried.",Neutral,Routine care;Staff friendliness
+31,Outpatient,Ann Arbor VA Medical Center,2025-02-04 14:10:25,5,5,5,"The PTSD program is excellent. Group sessions are well-organized and the therapists are clearly experienced with veteran-specific issues. This program has been life-changing.",Positive,Mental health;PTSD program;Staff expertise
+32,Outpatient,Ann Arbor VA Medical Center,2025-02-07 11:25:33,1,2,1,"The eligibility office gave me contradictory information on three separate occasions. Extremely frustrating and caused delays in my treatment. Staff needs better training on policies.",Negative,Administrative process;Staff training;Communication
+33,Outpatient,Ann Arbor VA Medical Center,2025-02-15 15:40:21,4,4,4,"The neurology department provided excellent care. The doctor was thorough and took time to answer all my questions. The new diagnostic equipment seems very advanced.",Positive,Specialized care;Doctor interaction;Medical equipment
+34,Outpatient,Detroit VA Medical Center,2025-02-01 08:45:19,1,1,1,"Three hour wait for a 15-minute appointment. This happens every time. Staff acknowledged this is a 'normal' wait time, which is completely unacceptable.",Negative,Wait time;Staff attitude
+35,Outpatient,Detroit VA Medical Center,2025-02-02 13:22:51,4,5,4,"The pain management clinic was excellent. My doctor listened carefully to my concerns and offered multiple treatment options. First time I've felt hopeful in months.",Positive,Pain management;Doctor interaction
+36,Outpatient,Detroit VA Medical Center,2025-02-03 10:50:33,3,3,2,"Standard visit for medication management. No issues but nothing exceptional either. The pharmacy was efficient.",Neutral,Medication management;Pharmacy
+37,Outpatient,Detroit VA Medical Center,2025-02-04 14:35:27,2,2,3,"Staff gave conflicting information about my medication. One nurse said to take it with food, another said on an empty stomach. Needs better coordination.",Negative,Information consistency;Medication management
+38,Outpatient,Detroit VA Medical Center,2025-02-07 09:25:12,5,4,5,"The rehabilitation services are outstanding. Physical therapist designed a custom program for my specific injury. Already seeing significant improvement.",Positive,Rehabilitation;Staff expertise;Treatment effectiveness
+39,Outpatient,Detroit VA Medical Center,2025-02-15 11:35:44,4,4,4,"The new specialty clinic for Gulf War veterans is excellent. Staff understands our specific health concerns. Having dedicated providers makes a huge difference.",Positive,Specialized care;Staff understanding
+40,Outpatient,Battle Creek VA Medical Center,2025-03-01 09:15:22,2,2,3,"Wait time was over 2 hours again today. This is becoming a pattern at this facility. The doctors are good but the scheduling system is clearly broken.",Negative,Wait time;Appointment scheduling
+41,Outpatient,Battle Creek VA Medical Center,2025-03-02 13:40:18,4,4,4,"The new online portal for requesting prescription refills works great. Much more convenient than calling or visiting in person. Technology improvements like this are appreciated.",Positive,Pharmacy;Technology
+42,Outpatient,Battle Creek VA Medical Center,2025-03-03 10:30:45,3,3,3,"The radiology department was efficient but the facility is showing its age. Some equipment looks outdated and the waiting area is cramped.",Neutral,Radiology;Facility conditions;Medical equipment
+43,Outpatient,Battle Creek VA Medical Center,2025-03-04 14:20:33,5,5,4,"The new integrated care team approach is working well. Having mental health, primary care, and physical therapy all coordinating makes a big difference in my overall care.",Positive,Integrated care;Care coordination
+44,Outpatient,Battle Creek VA Medical Center,2025-03-07 11:10:19,1,1,2,"Medication error at the pharmacy gave me the wrong dosage. Fortunately I noticed before taking it, but this kind of mistake could be dangerous.",Negative,Pharmacy;Medical error;Patient safety
+45,Outpatient,Battle Creek VA Medical Center,2025-03-15 15:35:27,4,4,5,"The staff at the specialty clinic is excellent. They understand my Gulf War-related symptoms and have developed a comprehensive treatment plan. First time I feel like someone is listening.",Positive,Specialized care;Staff understanding;Treatment plan
+46,Outpatient,Ann Arbor VA Medical Center,2025-03-01 11:20:33,5,5,5,"The PTSD program continues to be excellent. Group sessions are well-organized and the therapists are clearly experienced with veteran-specific issues. This program has been life-changing.",Positive,Mental health;PTSD program;Staff expertise
+47,Outpatient,Ann Arbor VA Medical Center,2025-03-02 14:55:17,1,2,1,"The eligibility office gave me contradictory information on three separate occasions. Extremely frustrating and caused delays in my treatment. Staff needs better training on policies.",Negative,Administrative process;Staff training;Communication
+48,Outpatient,Ann Arbor VA Medical Center,2025-03-03 09:40:42,3,3,3,"Regular checkup went fine. The nurse was friendly and efficient. Doctor seemed knowledgeable but a bit hurried.",Neutral,Routine care;Staff friendliness
+49,Outpatient,Ann Arbor VA Medical Center,2025-03-04 13:15:25,4,4,4,"The physical therapy department continues to provide excellent care. The therapists are knowledgeable and attentive. Making good progress with my rehabilitation.",Positive,Physical therapy;Staff expertise;Rehabilitation
+50,Outpatient,Ann Arbor VA Medical Center,2025-03-07 10:30:19,2,2,2,"The audiology department seems perpetually understaffed. Had to wait weeks for an appointment and then the actual visit felt rushed. My hearing aid still isn't working properly.",Negative,Staff shortage;Wait time;Medical equipment
+51,Outpatient,Ann Arbor VA Medical Center,2025-03-15 15:10:37,5,4,5,"The new cognitive behavioral therapy program for chronic pain is excellent. Learning techniques to manage pain without increasing medication has been invaluable.",Positive,Pain management;Mental health;Treatment effectiveness
+52,Outpatient,Detroit VA Medical Center,2025-03-01 09:30:28,5,5,4,"The women's health clinic is excellent. The staff understands the unique needs of female veterans. The facility is clean and private, which I greatly appreciate.",Positive,Women's health;Staff understanding;Privacy
+53,Outpatient,Detroit VA Medical Center,2025-03-02 14:15:52,2,3,2,"The prescription refill process is too complicated. Had to make multiple calls and still didn't get my medication on time. This system needs improvement.",Negative,Pharmacy;Administrative process
+54,Outpatient,Detroit VA Medical Center,2025-03-03 10:45:19,3,3,3,"Routine follow-up appointment went as expected. Doctor reviewed my lab results and renewed prescriptions. Nothing special to report.",Neutral,Routine care;Lab results
+55,Outpatient,Detroit VA Medical Center,2025-03-04 13:20:41,4,4,4,"The diabetes management program is excellent. The nutritionist and endocrinologist work together to provide comprehensive care. My A1C levels have improved significantly.",Positive,Specialized care;Care coordination;Treatment effectiveness
+56,Outpatient,Detroit VA Medical Center,2025-03-07 11:05:27,1,2,1,"Referral to specialist has been pending for over 2 months with no updates. Called multiple times and get different answers each time. Very frustrating process.",Negative,Referral process;Communication;Administrative process
+57,Outpatient,Detroit VA Medical Center,2025-03-15 14:40:33,5,4,5,"The new virtual reality therapy for PTSD is groundbreaking. Being able to work through trauma in a controlled environment with therapist guidance has been transformative.",Positive,Mental health;PTSD program;Technology
+58,Inpatient,Battle Creek VA Medical Center,2025-01-10 16:23:54,5,5,5,"My stay at the hospital was excellent. The nurses checked on me regularly, the room was clean and comfortable, and the food was surprisingly good. I felt well taken care of.",Positive,Nursing care;Facility conditions;Food quality
+59,Inpatient,Battle Creek VA Medical Center,2025-01-21 08:36:17,1,1,2,"The night staff was rude and ignored my call button. It took 45 minutes for someone to respond when I needed pain medication. The room was also too hot and I couldn't adjust the temperature.",Negative,Staff rudeness;Response time;Room comfort
+60,Inpatient,Battle Creek VA Medical Center,2025-02-05 12:45:33,4,3,4,"Good care overall. The nursing staff was attentive and professional. Food could be better but medical care was excellent.",Positive,Nursing care;Food quality;Medical care
+61,Inpatient,Battle Creek VA Medical Center,2025-03-15 10:20:14,4,4,5,"The cardiac care unit provided excellent care. The staff was responsive and explained everything clearly. The new monitoring equipment seems to be a good investment.",Positive,Specialized care;Staff communication;Medical equipment
+62,Inpatient,Ann Arbor VA Medical Center,2025-01-12 13:24:33,5,4,5,"The surgery went well and the surgical team was professional and reassuring. Recovery was comfortable and the staff was attentive. Only complaint is the noisy hallway at night.",Positive,Surgical care;Staff professionalism;Noise levels
+63,Inpatient,Ann Arbor VA Medical Center,2025-01-23 15:47:56,2,2,2,"Room was cold and the blankets provided were thin. Had to ask multiple times for more blankets. Food was bland and sometimes cold when delivered. Staff seemed overworked.",Negative,Room comfort;Food quality;Staff shortage
+64,Inpatient,Ann Arbor VA Medical Center,2025-02-14 11:30:19,4,3,4,"Nursing staff was attentive and professional. Pain management was handled well. The new private rooms are a significant improvement over the old ward.",Positive,Nursing care;Pain management;Facility improvements
+65,Inpatient,Ann Arbor VA Medical Center,2025-03-18 11:45:33,1,1,2,"The weekend staff seems skeletal. Long waits for assistance and some requests were completely forgotten. There's a noticeable difference in care quality on weekends vs weekdays.",Negative,Staff shortage;Response time;Weekend care
+66,Inpatient,Detroit VA Medical Center,2025-01-15 09:17:42,5,4,5,"Excellent care during my stay. The nurses were attentive and the doctors thoroughly explained my treatment. The new patient rooms are a significant improvement over the old ward.",Positive,Nursing care;Doctor interaction;Facility improvements
+67,Inpatient,Detroit VA Medical Center,2025-01-26 16:33:58,2,2,3,"The food is terrible. Menu options are limited and not suitable for diabetics. The staff tried to accommodate but the kitchen seems to have limited options.",Negative,Food quality;Dietary accommodation
+68,Inpatient,Detroit VA Medical Center,2025-02-15 10:45:22,4,4,4,"Recovery ward is well-staffed and nurses are attentive. Pain management was excellent. The rehabilitation team coordinated well with nursing staff for early mobility.",Positive,Nursing care;Pain management;Care coordination
+69,Inpatient,Detroit VA Medical Center,2025-03-15 16:40:28,5,4,5,"The rehabilitation unit is impressive. The physical therapists are attentive and the facilities are modern. Daily progress is well-tracked and communicated.",Positive,Rehabilitation;Staff expertise;Facility conditions
+70,Inpatient,Detroit VA Medical Center,2025-03-16 10:15:42,2,2,2,"The discharge process was disorganized. Waited hours for paperwork and medications. Instructions for home care were unclear and had to call back multiple times for clarification.",Negative,Discharge process;Communication;Administrative process
+71,AMA,Battle Creek VA Medical Center,2025-01-15 14:52:39,4,3,4,"The Ask Me Anything session was informative. I appreciate the VA making administrators available to answer our questions directly. Some questions went unanswered though.",Positive,Communication;Administration
+72,AMA,Battle Creek VA Medical Center,2025-02-15 13:30:22,3,3,3,"Session was average. Some questions answered thoroughly, others avoided. Director seemed uncomfortable discussing staffing shortages.",Neutral,Communication;Administration;Staff shortage
+73,AMA,Battle Creek VA Medical Center,2025-03-15 10:45:19,4,3,4,"Appreciate the leadership addressing our concerns about parking. The planned expansion sounds promising. Hope the timeline shared is accurate.",Positive,Parking;Facility improvements;Administration
+74,AMA,Ann Arbor VA Medical Center,2025-01-16 10:12:45,4,4,3,"Good session with the director. Appreciated the transparency about upcoming changes. Would have liked more time for questions from veterans.",Positive,Communication;Administration
+75,AMA,Ann Arbor VA Medical Center,2025-02-16 11:30:33,3,2,3,"Some questions were answered vaguely. Need more specific timelines for improvements. Leadership seemed reluctant to discuss budget constraints.",Neutral,Communication;Administration;Budget
+76,AMA,Ann Arbor VA Medical Center,2025-03-16 09:45:22,4,4,4,"Productive session discussing new mental health initiatives. Director was well-prepared and provided specific timelines for implementation.",Positive,Mental health;Administration;Communication
+77,AMA,Detroit VA Medical Center,2025-01-20 11:25:37,2,3,2,"The administrators didn't seem prepared for our questions. Many responses were vague and noncommittal. These sessions feel more like a formality than a genuine attempt at communication.",Negative,Communication;Administration
+78,AMA,Detroit VA Medical Center,2025-02-20 10:15:19,3,3,3,"Some improvements in the session format. More questions answered but still some vague responses. Appreciate the new online submission system for questions.",Neutral,Communication;Administration;Technology
+79,AMA,Detroit VA Medical Center,2025-03-20 13:40:41,4,4,3,"Much better session this month. Administration seems more prepared and forthcoming. The new facility renovation plans were well presented with clear timelines.",Positive,Communication;Administration;Facility improvements
+80,BTSS,Battle Creek VA Medical Center,2025-01-18 11:10:05,2,2,1,"The transition services are confusing. I couldn't get a straight answer about my benefits. I've been sent from one office to another with no resolution.",Negative,Benefits information;Administrative process
+81,BTSS,Battle Creek VA Medical Center,2025-02-18 10:30:33,3,3,3,"Some improvement in transition services. Still complex but staff trying to be helpful. The new benefits guidebook is somewhat clearer than previous materials.",Neutral,Administrative process;Staff helpfulness;Information resources
+82,BTSS,Battle Creek VA Medical Center,2025-03-18 14:15:47,4,3,4,"Transition support has improved. New guidebook is helpful for navigating benefits. Staff seems better trained on recent policy changes.",Positive,Benefits information;Information resources;Staff training
+83,BTSS,Ann Arbor VA Medical Center,2025-01-19 14:35:27,3,3,4,"The transition specialist was knowledgeable and helped me understand my options. The process is still complex but I at least have a path forward now.",Neutral,Benefits information;Staff helpfulness
+84,BTSS,Ann Arbor VA Medical Center,2025-02-19 09:20:19,4,4,3,"Education benefits information was clear and helpful. Career counseling was beneficial. The new online portal for tracking benefit applications is a great improvement.",Positive,Education benefits;Career services;Technology
+85,BTSS,Ann Arbor VA Medical Center,2025-03-22 09:50:37,2,3,2,"The housing assistance program information was outdated. Was directed to resources that no longer exist. This is a serious issue for transitioning veterans seeking housing.",Negative,Housing assistance;Information accuracy
+86,BTSS,Detroit VA Medical Center,2025-01-25 09:40:15,4,4,4,"The transition support team was helpful and patient. They walked me through each step of the process and helped me fill out the complex paperwork. Very appreciative of their assistance.",Positive,Staff helpfulness;Administrative process
+87,BTSS,Detroit VA Medical Center,2025-02-25 11:25:33,3,3,3,"Benefits information was clear but employment assistance needs improvement. More partnerships with local businesses would be beneficial for transitioning veterans.",Neutral,Benefits information;Employment assistance
+88,BTSS,Detroit VA Medical Center,2025-03-25 14:50:22,4,4,5,"The transition program has improved significantly. New staff seems better trained and the process is more streamlined. The employment workshops have been particularly helpful.",Positive,Staff training;Administrative process;Employment assistance
+```
