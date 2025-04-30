@@ -132,12 +132,17 @@ ORDER BY facility_name;
 - Maximum satisfaction score: 5 (from comment_id 46)
 - Average satisfaction score: 4.0 (Sum of scores: 3+4+4+5 = 16, divided by 4 = 4.0)
 
-**Why RAG Will Struggle:** This requires multiple computational steps:
-1. Filtering by specific date
-2. Filtering by facility
-3. Identifying min and max values
-4. Calculating an average
-Even small retrieval errors will lead to incorrect calculations.
+**Why RAG Will Struggle:** RAG systems struggle with computational questions due to retrieval limitations:
+
+1. **Incomplete data retrieval**: They retrieve only a subset of documents rather than all matching records
+   
+2. **Misleading accuracy**: Min/max values might appear correct by coincidence. If satisfaction scores of 3 and 5 appear frequently throughout the dataset, RAG might retrieve documents containing these values even if they're not the right date-specific records. This creates an illusion of accuracy.
+   
+3. **Average calculations will be wrong**: Even if min/max accidentally appear correct, the average calculation will almost certainly be wrong because it requires all relevant records.
+   
+4. **No validation mechanism**: RAG has no way to verify it has retrieved all relevant records before performing calculations.
+
+This highlights why RAG is fundamentally unsuited for precise mathematical operations on structured data - the results may sometimes appear plausible but cannot be relied upon.
 
 **SQL Query:**
 ```sql
@@ -232,29 +237,40 @@ ORDER BY avg_satisfaction DESC;
 **Your Observation:** [Record the actual RAG response here]
 
 ### B6. Time-Based Trend Analysis
-**Question:** "How did satisfaction scores at Ann Arbor VA Medical Center change from January to March 2025?"
+**Question:** "Is there a difference in satisfaction scores between weekdays and weekend comments at Battle Creek VA Medical Center?"
 
-**Expected Answer:**
-- January 2025: 3.35 average satisfaction (Sum: 67, Count: 20)
-- February 2025: 3.04 average satisfaction (Sum: 76, Count: 25)
-- March 2025: 2.76 average satisfaction (Sum: 58, Count: 21)
-- Conclusion: There appears to be a declining trend in satisfaction scores at Ann Arbor VA Medical Center from January to March 2025.
+**Expected Answer:** There is only one explicitly mentioned weekend comment (comment_id: 7) at Battle Creek with a satisfaction score of 1, compared to the weekday comments which have an average satisfaction score of approximately 3.05. This suggests lower satisfaction on weekends, but the sample size is too small for definitive conclusions.
 
-**Why RAG Will Struggle:** This requires time-series grouping, calculations for each time period, and trend identification. RAG systems typically struggle with complex time-based analyses that require understanding date ranges and performing multiple aggregations.
+**Why RAG Will Struggle:** This question requires several capabilities that challenge RAG systems:
+
+1. **Conceptual understanding**: RAG needs to understand the concept of weekdays vs. weekends and translate dates into day types
+   
+2. **Implicit information extraction**: The system must identify which records are from weekends (either explicitly mentioned or by analyzing the dates)
+   
+3. **Comprehensive data analysis**: All records need to be properly categorized and included in calculations
+   
+4. **Multi-stage reasoning**: The system must perform grouping, calculation, and comparison operations
+
+Even if RAG could reliably extract dates from all relevant records (which is challenging given retrieval limitations), it would still need to correctly categorize each date as weekday or weekend before performing calculations and comparisons. This combination of conceptual understanding and multi-stage numerical analysis is particularly difficult for RAG systems.
 
 **SQL Query:**
 ```sql
 SELECT 
-  DATE_TRUNC('month', responsedate) as month,
+  CASE 
+    WHEN DAYOFWEEK(responsedate) IN (1, 7) THEN 'Weekend'
+    ELSE 'Weekday' 
+  END as day_type,
   AVG(satisfaction) as avg_satisfaction,
-  COUNT(*) as response_count,
-  SUM(satisfaction) as sum_satisfaction
+  COUNT(*) as comment_count,
+  MIN(satisfaction) as min_satisfaction,
+  MAX(satisfaction) as max_satisfaction
 FROM test_db.test_vsignla_data
-WHERE facility_name = 'Ann Arbor VA Medical Center'
-  AND responsedate >= '2025-01-01' 
-  AND responsedate < '2025-04-01'
-GROUP BY DATE_TRUNC('month', responsedate)
-ORDER BY month;
+WHERE facility_name = 'Battle Creek VA Medical Center'
+GROUP BY CASE 
+    WHEN DAYOFWEEK(responsedate) IN (1, 7) THEN 'Weekend'
+    ELSE 'Weekday' 
+  END
+ORDER BY day_type;
 ```
 
 **Your Observation:** [Record the actual RAG response here]
@@ -319,12 +335,23 @@ Based on the structure of these questions, we expect RAG to perform well on:
 
 RAG will likely struggle with:
 1. Counting total records across the entire dataset
-2. Performing min/max/average calculations
+2. Performing calculations that require complete data retrieval
 3. Comparing numerical values across different groupings
 4. Analyzing correlations between variables
 5. Identifying time-based trends
 
-This capability assessment will help your technical leadership understand where RAG excels (information retrieval and understanding) and where it has limitations (mathematical computations and data aggregation) when working with structured VA survey data.
+**Deceptive Accuracy Issues:**
+A particularly concerning issue is that RAG might give seemingly correct answers to quantitative questions by coincidence. For example:
+- Min/max values might appear correct if common values (like 1 and 5 on a 5-point scale) happen to be included in the retrieved documents
+- Simple counts might seem plausible even when drastically undercounted
+- These deceptive "hits" create false confidence in the system's mathematical capabilities
+
+The key limitation isn't that RAG can't perform mathematical operations - it can. The issue is that RAG systems:
+- Retrieve only a subset of documents rather than the complete matching set
+- Have no mechanism to verify data completeness before calculation
+- Cannot guarantee consistent results for identical quantitative queries
+
+This capability assessment will help your technical leadership understand where RAG excels (information retrieval and understanding) and where it has limitations (comprehensive data operations) when working with structured VA survey data.
 
 For best results, consider a hybrid approach where:
 - RAG handles qualitative analysis, sentiment understanding, and specific information retrieval
