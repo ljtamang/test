@@ -1,1 +1,6 @@
+The fundamental issue is the same as the retrieval limitation test. RAG systems struggle with this question not because they can't perform mathematical operations, but because:
 
+They typically retrieve only a subset of relevant documents rather than all matching records
+They perform semantic matching rather than exact structured data filtering (for dates and facility names)
+If even one relevant record is missed in retrieval, the calculations will be incorrect
+RAG systems aren't designed for database-like operations that require complete data retrieval
