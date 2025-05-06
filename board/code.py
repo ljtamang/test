@@ -1,14 +1,14 @@
 import spacy
 
-def redact_name_pii(text):
+def redact_name_org_facility(text):
     """
-    Redact only name-related PII (person names and organization names) from text.
+    Redact name-related PII (person names, organization names, and facilities) from text.
     
     Args:
         text (str): The input text to redact
         
     Returns:
-        str: Text with name PII replaced by entity type tags
+        str: Text with name, organization, and facility PII replaced by entity type tags
     """
     # Load the English NLP model
     nlp = spacy.load("en_core_web_md")
@@ -19,27 +19,28 @@ def redact_name_pii(text):
     # Create a list of tokens to be joined later
     tokens = []
     
-    # Define which entity types to redact (only names)
-    name_entities = {
+    # Define which entity types to redact
+    entities_to_redact = {
         "PERSON": "<PERSON>",
-        "ORG": "<ORGANIZATION>"
+        "ORG": "<ORGANIZATION>",
+        "FAC": "<FACILITY>"
     }
     
     # Track current entity to handle multi-token entities
     current_ent = None
     
     for token in doc:
-        # Check if this token is part of a name entity we want to redact
-        if token.ent_type_ in name_entities:
+        # Check if this token is part of an entity we want to redact
+        if token.ent_type_ in entities_to_redact:
             # If this is the start of a new entity
             if current_ent != token.ent_:
                 current_ent = token.ent_
                 # Get the standardized tag for this entity type
-                tag = name_entities[token.ent_type_]
+                tag = entities_to_redact[token.ent_type_]
                 tokens.append(tag)
         else:
-            # If we're not in a name entity or we've left one
-            if current_ent and current_ent.label_ in name_entities:
+            # If we're not in a target entity or we've left one
+            if current_ent and current_ent.label_ in entities_to_redact:
                 current_ent = None
             
             # Add the original token text
@@ -58,6 +59,6 @@ def redact_name_pii(text):
 
 # Example usage
 if __name__ == "__main__":
-    comment = "Lasang works for University of Memphis during the day and lives in Nashville."
-    redacted = redact_name_pii(comment)
-    print(redacted)  # Output: "<PERSON> works for <ORGANIZATION> during the day and lives in Nashville."
+    comment = "My name is John Smith and I had a great experience at the VA hospital in San Diego. I visited the Pentagon last month."
+    redacted = redact_name_org_facility(comment)
+    print(redacted)  # Output: "My name is <PERSON> and I had a great experience at the <ORGANIZATION> in San Diego. I visited the <FACILITY> last month."
