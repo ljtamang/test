@@ -1,64 +1,78 @@
 import spacy
+import re
 
-def redact_name_org_facility(text):
+def redact_person_names(text):
     """
-    Redact name-related PII (person names, organization names, and facilities) from text.
+    Function to identify and redact person names in text.
+    Replaces identified person names with <PERSON> tag.
     
     Args:
-        text (str): The input text to redact
+        text (str): Input text to process
         
     Returns:
-        str: Text with name, organization, and facility PII replaced by entity type tags
+        str: Text with person names redacted
     """
-    # Load the English NLP model
-    nlp = spacy.load("en_core_web_md")
+    # Load spaCy English model with NER capability
+    nlp = spacy.load("en_core_web_lg")
     
     # Process the text
     doc = nlp(text)
     
-    # Create a list of tokens to be joined later
-    tokens = []
+    # Create a list to store the spans that need to be redacted
+    spans_to_redact = []
     
-    # Define which entity types to redact
-    entities_to_redact = {
-        "PERSON": "<PERSON>",
-        "ORG": "<ORGANIZATION>",
-        "FAC": "<FACILITY>"
-    }
+    # Find person entities using spaCy's NER
+    for ent in doc.ents:
+        if ent.label_ == "PERSON":
+            spans_to_redact.append((ent.start_char, ent.end_char))
     
-    # Track current entity to handle multi-token entities
-    current_ent = None
+    # Additional patterns to catch names that might be missed by spaCy
     
-    for token in doc:
-        # Check if this token is part of an entity we want to redact
-        if token.ent_type_ in entities_to_redact:
-            # If this is the start of a new entity
-            if current_ent != token.ent_:
-                current_ent = token.ent_
-                # Get the standardized tag for this entity type
-                tag = entities_to_redact[token.ent_type_]
-                tokens.append(tag)
-        else:
-            # If we're not in a target entity or we've left one
-            if current_ent and current_ent.label_ in entities_to_redact:
-                current_ent = None
-            
-            # Add the original token text
-            if not current_ent:
-                tokens.append(token.text)
+    # Pattern for titles followed by names
+    title_pattern = r'\b(Dr\.|Mr\.|Mrs\.|Ms\.|Miss|Sgt\.|Col\.|Gen\.|Prof\.|Lieutenant|Captain|Major)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b'
+    for match in re.finditer(title_pattern, text):
+        name_start = match.start(2)  # Start of the name after the title
+        name_end = match.end(2)
+        spans_to_redact.append((name_start, name_end))
     
-    # Join the tokens with spaces
-    redacted_text = ""
-    for i, token in enumerate(tokens):
-        # Don't add a space before punctuation
-        if i > 0 and token not in ".,!?;:)]}" and tokens[i-1] not in "([{":
-            redacted_text += " "
-        redacted_text += token
-        
-    return redacted_text
+    # Pattern for names with apostrophes or hyphens
+    special_name_pattern = r'\b[A-Z][a-z]+(?:[-\']\w+)+\b'
+    for match in re.finditer(special_name_pattern, text):
+        spans_to_redact.append((match.start(), match.end()))
+    
+    # Sort spans in reverse order to avoid messing up character positions when replacing
+    spans_to_redact.sort(key=lambda x: x[0], reverse=True)
+    
+    # Replace each span with <PERSON>
+    result = text
+    for start, end in spans_to_redact:
+        result = result[:start] + "<PERSON>" + result[end:]
+    
+    return result
 
-# Example usage
-if __name__ == "__main__":
-    comment = "My name is John Smith and I had a great experience at the VA hospital in San Diego. I visited the Pentagon last month."
-    redacted = redact_name_org_facility(comment)
-    print(redacted)  # Output: "My name is <PERSON> and I had a great experience at the <ORGANIZATION> in San Diego. I visited the <FACILITY> last month."
+# Function to demonstrate redaction on the sample comments
+def demonstrate_redaction(examples):
+    print("Original Text -> Redacted Text")
+    
+    for example in examples:
+        redacted = redact_person_names(example)
+        print(f"Original: {example}")
+        print(f"Redacted: {redacted}")
+        print("-" * 50)
+
+# Sample comments
+sample_comments = [
+    "Dr. Smith at the VA clinic in Phoenix was very helpful with my medication issues.",
+    "I waited 3 hours before John Williams finally called me back about my benefits claim.",
+    "The nurse practitioner Mary Jane Johnson took time to explain everything clearly.",
+    "My experience with Sgt. Rodriguez during my transition assistance was outstanding.",
+    "I was disappointed that Ms. Sarah O'Malley-Smith didn't follow up as promised.",
+    "When I called about my appointment, Robert told me I needed to bring different paperwork.",
+    "The physical therapist (David Lee, I think) showed me exercises that really helped my back pain.",
+    "I would like to thank Nguyen from the front desk for going above and beyond.",
+    "My VSO J.R. Thompson helped me navigate the claims process efficiently.",
+    "I'm grateful to both Dr. Li and Nurse Washington for their exceptional care."
+]
+
+# Demonstrate the redaction
+demonstrate_redaction(sample_comments)
