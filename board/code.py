@@ -28,24 +28,47 @@ def redact_person_names(text):
     
     # Additional patterns to catch names that might be missed by spaCy
     
-    # Pattern for titles followed by names
+    # Pattern for titles followed by names (capture the entire name including title)
     title_pattern = r'\b(Dr\.|Mr\.|Mrs\.|Ms\.|Miss|Sgt\.|Col\.|Gen\.|Prof\.|Lieutenant|Captain|Major)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b'
     for match in re.finditer(title_pattern, text):
-        name_start = match.start(2)  # Start of the name after the title
-        name_end = match.end(2)
-        spans_to_redact.append((name_start, name_end))
+        if match.group(2):  # Make sure we have a name after the title
+            spans_to_redact.append((match.start(0), match.end(0)))  # Capture the entire title + name
     
     # Pattern for names with apostrophes or hyphens
     special_name_pattern = r'\b[A-Z][a-z]+(?:[-\']\w+)+\b'
     for match in re.finditer(special_name_pattern, text):
         spans_to_redact.append((match.start(), match.end()))
     
+    # Pattern for professional titles + surname (like "Nurse Washington")
+    prof_name_pattern = r'\b(Nurse|Doctor|Officer|Agent|Detective|Judge|Professor)\s+([A-Z][a-z]+)\b'
+    for match in re.finditer(prof_name_pattern, text):
+        spans_to_redact.append((match.start(0), match.end(0)))  # Capture entire "title + name"
+    
+    # Remove overlapping spans
+    non_overlapping_spans = []
+    if spans_to_redact:
+        # Sort by start position
+        sorted_spans = sorted(spans_to_redact, key=lambda x: x[0])
+        current_span = sorted_spans[0]
+        
+        for next_span in sorted_spans[1:]:
+            # If current and next span overlap
+            if next_span[0] < current_span[1]:
+                # Merge them
+                current_span = (current_span[0], max(current_span[1], next_span[1]))
+            else:
+                non_overlapping_spans.append(current_span)
+                current_span = next_span
+        
+        # Don't forget to add the last span
+        non_overlapping_spans.append(current_span)
+    
     # Sort spans in reverse order to avoid messing up character positions when replacing
-    spans_to_redact.sort(key=lambda x: x[0], reverse=True)
+    non_overlapping_spans.sort(key=lambda x: x[0], reverse=True)
     
     # Replace each span with <PERSON>
     result = text
-    for start, end in spans_to_redact:
+    for start, end in non_overlapping_spans:
         result = result[:start] + "<PERSON>" + result[end:]
     
     return result
