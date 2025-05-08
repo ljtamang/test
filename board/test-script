@@ -1,34 +1,51 @@
 import pandas as pd
 
-def load_excel_tabs_to_dataframes(excel_file_path):
-    # Read the Excel file
-    excel = pd.ExcelFile(excel_file_path)
+def merge_columns(df, columns_to_merge, result_column_name, separator=" "):
+    """
+    Create a new column by concatenating values from specified columns.
     
-    # Get all sheet names
-    sheet_names = excel.sheet_names
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The input DataFrame
+    columns_to_merge : list
+        List of column headers to concatenate
+    result_column_name : str
+        Name for the new concatenated column
+    separator : str, optional
+        The separator to use between concatenated values, default is a space
     
-    # Create a dictionary to store DataFrames
-    dfs = {}
+    Returns:
+    --------
+    pandas DataFrame
+        The modified DataFrame with the new concatenated column
+    """
+    # Create a copy to avoid modifying the original
+    result_df = df.copy()
     
-    # Loop through each sheet and load it into a DataFrame
-    for sheet in sheet_names:
-        dfs[sheet] = pd.read_excel(excel_file_path, sheet_name=sheet)
-        print(f"Loaded sheet '{sheet}' with {dfs[sheet].shape[0]} rows and {dfs[sheet].shape[1]} columns")
+    # Check if all specified columns exist in the DataFrame
+    missing_cols = [col for col in columns_to_merge if col not in result_df.columns]
+    if missing_cols:
+        raise ValueError(f"Columns {missing_cols} not found in DataFrame")
     
-    return dfs
+    # Function to concatenate non-empty strings with proper spacing
+    def concat_row(row):
+        # Convert values to string, strip whitespace, and filter out empty strings and NaN values
+        values = []
+        for col in columns_to_merge:
+            if pd.notna(row[col]):  # Skip NaN values
+                value = str(row[col]).strip()  # Convert to string and strip whitespace
+                if value:  # Skip empty strings
+                    values.append(value)
+        
+        # Join with the separator and ensure no trailing/leading spaces
+        return separator.join(values).strip()
+    
+    # Apply the concatenation function
+    result_df[result_column_name] = result_df.apply(concat_row, axis=1)
+    
+    return result_df
 
-# Usage example
-file_path = "your_excel_file.xlsx"  # Replace with your file path
-dataframes = load_excel_tabs_to_dataframes(file_path)
 
-# Access individual DataFrames
-# For example, if you have a sheet named 'Sheet1'
-# sheet1_df = dataframes['Sheet1']
-
-
-
-sales_df = dataframes["Sales"]
-expenses_df = dataframes["Expenses"]
-summary_df = dataframes["Summary"]
-
-# Now you can work with each DataFrame separately
+# Merge columns with default separator (space)
+result1 = merge_columns(df, ['Code', 'Description'], 'Full_Item')
