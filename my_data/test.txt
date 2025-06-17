@@ -41,3 +41,50 @@ globals()['environment'] = environment
 globals()['PROJECT_ROOT'] = VFS_PROJECT_ROOT
 
 print(f"🚀 VFS {environment.upper()} ready!")
+
+----------
+# VFS/configs/dev.yaml
+environment:
+  name: "dev"
+
+git:
+  repo_name: "vfs-data-dev"
+  branch: "develop"
+  local_path: "/tmp/vfs_repo_dev"
+
+azure:
+  storage_account: "vfsdevstorageaccount"
+  mount_point: "/mnt/vfs-datalake-dev"
+
+database:
+  name: "vfs_ingestion_dev"
+
+processing:
+  folder_name: "VFS-OCTO-dev"
+  batch_size: 1000
+  file_types: [".csv", ".xlsx", ".json"]
+
+
+
+---------------
+
+# VFS/configs/prod.yaml
+environment:
+  name: "prod"
+
+git:
+  repo_name: "vfs-data-prod"
+  branch: "main"
+  local_path: "/tmp/vfs_repo_prod"
+
+azure:
+  storage_account: "vfsprodstorageaccount"
+  mount_point: "/mnt/vfs-datalake"
+
+database:
+  name: "vfs_ingestion"
+
+processing:
+  folder_name: "VFS-OCTO"
+  batch_size: 10000
+  file_types: [".csv", ".xlsx", ".json", ".parquet"]
