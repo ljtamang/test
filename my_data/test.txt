@@ -1,1 +1,43 @@
+# VFS/project_setup.py
+# Databricks notebook source
 
+# MAGIC %md
+# MAGIC ## VFS Project Setup
+
+# COMMAND ----------
+
+import sys
+
+# COMMAND ----------
+
+# VFS Project Root
+VFS_PROJECT_ROOT = "/Workspace/Users/your-email@company.com/VFS"
+
+if VFS_PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, VFS_PROJECT_ROOT)
+
+print(f"✅ VFS Project ready: {VFS_PROJECT_ROOT}")
+
+# COMMAND ----------
+
+# Environment widget (default: dev)
+dbutils.widgets.dropdown("environment", "dev", ["dev", "prod"], "Environment")
+
+# COMMAND ----------
+
+# Load configuration
+environment = dbutils.widgets.get("environment")
+
+from vfs_config import load_config
+config = load_config(environment)
+
+print(f"✅ VFS {environment.upper()} loaded")
+
+# COMMAND ----------
+
+# Make globally available
+globals()['config'] = config
+globals()['environment'] = environment
+globals()['PROJECT_ROOT'] = VFS_PROJECT_ROOT
+
+print(f"🚀 VFS {environment.upper()} ready!")
