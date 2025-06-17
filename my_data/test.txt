@@ -1,90 +1,50 @@
-# VFS/project_setup.py
-# Databricks notebook source
-
-# MAGIC %md
-# MAGIC ## VFS Project Setup
-
-# COMMAND ----------
-
+# VFS/project_setup.py (Simple Python file)
+"""
+VFS Project Setup - Simple Python Module
+"""
 import sys
+from pathlib import Path
 
-# COMMAND ----------
-
-# VFS Project Root
+# VFS Configuration
 VFS_PROJECT_ROOT = "/Workspace/Users/your-email@company.com/VFS"
 
-if VFS_PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, VFS_PROJECT_ROOT)
+def ensure_vfs_path():
+    """Ensure VFS is in Python path"""
+    if VFS_PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, VFS_PROJECT_ROOT)
+    return VFS_PROJECT_ROOT
 
-print(f"✅ VFS Project ready: {VFS_PROJECT_ROOT}")
+def setup_vfs(environment="dev"):
+    """
+    Setup VFS with specified environment
+    
+    Args:
+        environment (str): Environment to load (dev, prod)
+    
+    Returns:
+        dict: VFS configuration
+    """
+    # Ensure path
+    project_root = ensure_vfs_path()
+    
+    # Load config
+    from vfs_config import load_config
+    config = load_config(environment)
+    
+    if config is None:
+        print(f"❌ Failed to load environment: {environment}")
+        return None
+    
+    print(f"✅ VFS {environment.upper()} ready!")
+    print(f"📁 Root: {project_root}")
+    print(f"🗄️  Database: {config['database']['name']}")
+    
+    return {
+        'config': config,
+        'environment': environment,
+        'PROJECT_ROOT': project_root
+    }
 
-# COMMAND ----------
-
-# Environment widget (default: dev)
-dbutils.widgets.dropdown("environment", "dev", ["dev", "prod"], "Environment")
-
-# COMMAND ----------
-
-# Load configuration
-environment = dbutils.widgets.get("environment")
-
-from vfs_config import load_config
-config = load_config(environment)
-
-print(f"✅ VFS {environment.upper()} loaded")
-
-# COMMAND ----------
-
-# Make globally available
-globals()['config'] = config
-globals()['environment'] = environment
-globals()['PROJECT_ROOT'] = VFS_PROJECT_ROOT
-
-print(f"🚀 VFS {environment.upper()} ready!")
-
-----------
-# VFS/configs/dev.yaml
-environment:
-  name: "dev"
-
-git:
-  repo_name: "vfs-data-dev"
-  branch: "develop"
-  local_path: "/tmp/vfs_repo_dev"
-
-azure:
-  storage_account: "vfsdevstorageaccount"
-  mount_point: "/mnt/vfs-datalake-dev"
-
-database:
-  name: "vfs_ingestion_dev"
-
-processing:
-  folder_name: "VFS-OCTO-dev"
-  batch_size: 1000
-  file_types: [".csv", ".xlsx", ".json"]
-
-
-
----------------
-
-# VFS/configs/prod.yaml
-environment:
-  name: "prod"
-
-git:
-  repo_name: "vfs-data-prod"
-  branch: "main"
-  local_path: "/tmp/vfs_repo_prod"
-
-azure:
-  storage_account: "vfsprodstorageaccount"
-  mount_point: "/mnt/vfs-datalake"
-
-database:
-  name: "vfs_ingestion"
-
-processing:
-  folder_name: "VFS-OCTO"
-  batch_size: 10000
-  file_types: [".csv", ".xlsx", ".json", ".parquet"]
+# Auto-setup when imported (optional)
+if __name__ != "__main__":
+    ensure_vfs_path()
