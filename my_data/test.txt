@@ -1,50 +1,164 @@
-# VFS/project_setup.py (Simple Python file)
+VFS/
+├── vfs_paths.py                             # ✅ DEFINE PATH HERE ONLY
+├── project_setup.py                        # Simple setup
+├── vfs_config.py                           # Config loader
+├── configs/
+│   ├── dev.yaml                            # Dev environment
+│   └── prod.yaml                           # Prod environment
+├── services/
+│   ├── __init__.py
+│   └── file_service.py                     # Service example
+├── notebooks/
+│   ├── ingestion/
+│   │   └── ie_first_time_ingestion.ipynb
+│   └── processing/
+│       └── data_processing.ipynb
+└── tests/
+    ├── __init__.py
+    └── test_services.py
+
+
+-------------------
+
+# VFS/vfs_paths.py
 """
-VFS Project Setup - Simple Python Module
+VFS Path Configuration - CHANGE PATH HERE ONLY
 """
 import sys
-from pathlib import Path
 
-# VFS Configuration
+# ✅ DEFINE YOUR FULL PATH HERE - CHANGE ONLY THIS LINE
 VFS_PROJECT_ROOT = "/Workspace/Users/your-email@company.com/VFS"
 
 def ensure_vfs_path():
-    """Ensure VFS is in Python path"""
+    """Add VFS to Python path if not already added"""
     if VFS_PROJECT_ROOT not in sys.path:
         sys.path.insert(0, VFS_PROJECT_ROOT)
     return VFS_PROJECT_ROOT
 
+# Auto-add to path when imported
+PROJECT_ROOT = ensure_vfs_path()
+
+
+------------
+
+# VFS/project_setup.py
+"""
+VFS Project Setup
+"""
+from vfs_paths import PROJECT_ROOT
+from vfs_config import load_config
+
 def setup_vfs(environment="dev"):
-    """
-    Setup VFS with specified environment
+    """Setup VFS with environment"""
     
-    Args:
-        environment (str): Environment to load (dev, prod)
-    
-    Returns:
-        dict: VFS configuration
-    """
-    # Ensure path
-    project_root = ensure_vfs_path()
-    
-    # Load config
-    from vfs_config import load_config
     config = load_config(environment)
     
     if config is None:
-        print(f"❌ Failed to load environment: {environment}")
+        print(f"❌ Environment '{environment}' not found")
         return None
     
     print(f"✅ VFS {environment.upper()} ready!")
-    print(f"📁 Root: {project_root}")
+    print(f"📁 Root: {PROJECT_ROOT}")
     print(f"🗄️  Database: {config['database']['name']}")
     
     return {
         'config': config,
         'environment': environment,
-        'PROJECT_ROOT': project_root
+        'PROJECT_ROOT': PROJECT_ROOT
     }
 
-# Auto-setup when imported (optional)
-if __name__ != "__main__":
-    ensure_vfs_path()
+
+---------------
+
+
+# VFS/vfs_config.py
+"""
+VFS Configuration loader
+"""
+import yaml
+from pathlib import Path
+from vfs_paths import PROJECT_ROOT
+
+def load_config(environment="dev"):
+    """Load environment configuration"""
+    
+    config_file = Path(PROJECT_ROOT) / "configs" / f"{environment}.yaml"
+    
+    if not config_file.exists():
+        print(f"❌ Config not found: {environment}")
+        return None
+    
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    config["project_root"] = PROJECT_ROOT
+    config["environment_name"] = environment
+    
+    return config
+
+
+-----------
+
+
+# VFS/notebooks/ingestion/ie_first_time_ingestion.ipynb
+# Databricks notebook source
+
+# MAGIC %md
+# MAGIC ## VFS First Time Ingestion
+
+# COMMAND ----------
+
+# ✅ Simple import - path automatically added
+from vfs_paths import PROJECT_ROOT
+from project_setup import setup_vfs
+
+print(f"📁 VFS Root: {PROJECT_ROOT}")
+
+# COMMAND ----------
+
+# Setup environment
+vfs = setup_vfs("dev")
+config = vfs['config']
+
+print(f"🌍 Environment: {config['environment_name']}")
+print(f"🗄️  Database: {config['database']['name']}")
+
+# COMMAND ----------
+
+# Use service
+from services.file_service import VFSFileService
+
+service = VFSFileService(config)
+result = service.process_files()
+
+print(f"✅ Result: {result}")
+
+
+-----------
+
+
+# VFS/services/file_service.py
+"""
+VFS File Service
+"""
+from vfs_paths import PROJECT_ROOT
+
+class VFSFileService:
+    """VFS file service"""
+    
+    def __init__(self, config):
+        self.config = config
+        self.environment = config["environment"]["name"]
+        
+        print(f"🎯 File Service - {self.environment.upper()}")
+        print(f"📁 Project Root: {PROJECT_ROOT}")
+        print(f"📊 Batch Size: {config['processing']['batch_size']}")
+    
+    def process_files(self):
+        """Process files"""
+        print(f"🔄 Processing files in {self.environment}")
+        return {
+            "status": "success",
+            "environment": self.environment,
+            "project_root": PROJECT_ROOT
+        }
