@@ -1,28 +1,48 @@
-# VFS/notebooks/ingestion.ipynb
-# Add this to check file locations
-
+# VFS/vfs_setup.py
+"""
+VFS Setup - Simple and Clean
+"""
+import sys
 import os
 from pathlib import Path
 
-# Check current location
-current_dir = Path.cwd()
-print(f"📁 Current directory: {current_dir}")
+# ✅ CONFIGURATION - CHANGE ONLY THESE LINES
+VFS_HARDCODED_PATH = "/Workspace/Users/your-email@company.com/VFS"
+PROJECT_FOLDER_NAME = "VFS"
 
-# Look for VFS folder
-possible_vfs_paths = [
-    current_dir / "VFS",
-    current_dir.parent / "VFS", 
-    current_dir.parent.parent / "VFS",
-    Path("/Workspace/Users/your-email@company.com/VFS")
-]
+def setup_vfs_path():
+    """Find and setup VFS path"""
+    
+    # Try hardcoded path first
+    if Path(VFS_HARDCODED_PATH).exists():
+        if VFS_HARDCODED_PATH not in sys.path:
+            sys.path.insert(0, VFS_HARDCODED_PATH)
+        return VFS_HARDCODED_PATH
+    
+    # Try auto-detect from current location
+    current = Path.cwd()
+    for path in [current] + list(current.parents):
+        # Check if this is the project directory
+        if (path / "vfs_setup.py").exists():
+            if str(path) not in sys.path:
+                sys.path.insert(0, str(path))
+            return str(path)
+            
+        # Check project folder as subdirectory
+        project_path = path / PROJECT_FOLDER_NAME
+        if project_path.exists() and (project_path / "vfs_setup.py").exists():
+            if str(project_path) not in sys.path:
+                sys.path.insert(0, str(project_path))
+            return str(project_path)
+    
+    # Try environment variable
+    env_path = os.environ.get('VFS_PROJECT_ROOT')
+    if env_path and Path(env_path).exists():
+        if env_path not in sys.path:
+            sys.path.insert(0, env_path)
+        return env_path
+    
+    raise Exception(f"Project not found. Update VFS_HARDCODED_PATH in vfs_setup.py")
 
-for path in possible_vfs_paths:
-    if path.exists():
-        print(f"✅ Found VFS at: {path}")
-        paths_file = path / "paths.py"
-        if paths_file.exists():
-            print(f"✅ Found paths.py at: {paths_file}")
-        else:
-            print(f"❌ paths.py missing at: {paths_file}")
-    else:
-        print(f"❌ VFS not found at: {path}")
+# Auto-setup when imported
+PROJECT_ROOT = setup_vfs_path()
