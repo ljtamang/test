@@ -1,48 +1,37 @@
-# VFS/vfs_setup.py
+# VFS/config.py
 """
-VFS Setup - Simple and Clean
+Simple Config Loader
 """
-import sys
-import os
+from vfs_setup import PROJECT_ROOT
+import yaml
 from pathlib import Path
 
-# ✅ CONFIGURATION - CHANGE ONLY THESE LINES
-VFS_HARDCODED_PATH = "/Workspace/Users/your-email@company.com/VFS"
-PROJECT_FOLDER_NAME = "VFS"
+def load_config(environment="dev"):
+    """Load environment config"""
+    config_file = Path(PROJECT_ROOT) / "configs" / f"{environment}.yaml"
+    
+    if not config_file.exists():
+        return None
+    
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    config["project_root"] = PROJECT_ROOT
+    config["environment_name"] = environment
+    
+    return config
 
-def setup_vfs_path():
-    """Find and setup VFS path"""
-    
-    # Try hardcoded path first
-    if Path(VFS_HARDCODED_PATH).exists():
-        if VFS_HARDCODED_PATH not in sys.path:
-            sys.path.insert(0, VFS_HARDCODED_PATH)
-        return VFS_HARDCODED_PATH
-    
-    # Try auto-detect from current location
-    current = Path.cwd()
-    for path in [current] + list(current.parents):
-        # Check if this is the project directory
-        if (path / "vfs_setup.py").exists():
-            if str(path) not in sys.path:
-                sys.path.insert(0, str(path))
-            return str(path)
-            
-        # Check project folder as subdirectory
-        project_path = path / PROJECT_FOLDER_NAME
-        if project_path.exists() and (project_path / "vfs_setup.py").exists():
-            if str(project_path) not in sys.path:
-                sys.path.insert(0, str(project_path))
-            return str(project_path)
-    
-    # Try environment variable
-    env_path = os.environ.get('VFS_PROJECT_ROOT')
-    if env_path and Path(env_path).exists():
-        if env_path not in sys.path:
-            sys.path.insert(0, env_path)
-        return env_path
-    
-    raise Exception(f"Project not found. Update VFS_HARDCODED_PATH in vfs_setup.py")
+def get_database_name(environment="dev"):
+    """Get database name directly"""
+    config = load_config(environment)
+    return config["database"]["name"] if config else None
 
-# Auto-setup when imported
-PROJECT_ROOT = setup_vfs_path()
+def get_storage_account(environment="dev"):
+    """Get storage account directly"""
+    config = load_config(environment)
+    return config["azure"]["storage_account"] if config else None
+
+def get_batch_size(environment="dev"):
+    """Get batch size directly"""
+    config = load_config(environment)
+    return config["processing"]["batch_size"] if config else None
