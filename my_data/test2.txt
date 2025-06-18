@@ -1,1 +1,6 @@
+# VFS/notebooks/ingestion.ipynb
+# Add this in first cell to see where you are
 
+import os
+print(f"Current working directory: {os.getcwd()}")
+print(f"Python path: {[p for p in __import__('sys').path if 'VFS' in p or 'Workspace' in p]}")
