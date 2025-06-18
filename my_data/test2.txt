@@ -1,37 +1,26 @@
-# VFS/config.py
+# VFS/project_setup.py
 """
-Simple Config Loader
+Simple Project Setup
 """
 from vfs_setup import PROJECT_ROOT
-import yaml
-from pathlib import Path
+from config import load_config
 
-def load_config(environment="dev"):
-    """Load environment config"""
-    config_file = Path(PROJECT_ROOT) / "configs" / f"{environment}.yaml"
+def setup_vfs(environment="dev"):
+    """Setup VFS"""
+    config = load_config(environment)
     
-    if not config_file.exists():
+    if config is None:
         return None
     
-    with open(config_file, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    config["project_root"] = PROJECT_ROOT
-    config["environment_name"] = environment
-    
-    return config
+    return {
+        'config': config,
+        'environment': environment,
+        'PROJECT_ROOT': PROJECT_ROOT
+    }
 
-def get_database_name(environment="dev"):
-    """Get database name directly"""
-    config = load_config(environment)
-    return config["database"]["name"] if config else None
-
-def get_storage_account(environment="dev"):
-    """Get storage account directly"""
-    config = load_config(environment)
-    return config["azure"]["storage_account"] if config else None
-
-def get_batch_size(environment="dev"):
-    """Get batch size directly"""
-    config = load_config(environment)
-    return config["processing"]["batch_size"] if config else None
+def get_vfs_info():
+    """Get basic VFS info"""
+    return {
+        'project_root': PROJECT_ROOT,
+        'available_environments': ['dev', 'prod']
+    }
