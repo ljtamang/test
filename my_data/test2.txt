@@ -1,26 +1,48 @@
-# VFS/project_setup.py
+# VFS/vfs_setup.py
 """
-Simple Project Setup
+VFS Setup - Simple and Clean
 """
-from vfs_setup import PROJECT_ROOT
-from config import load_config
+import sys
+import os
+from pathlib import Path
 
-def setup_vfs(environment="dev"):
-    """Setup VFS"""
-    config = load_config(environment)
-    
-    if config is None:
-        return None
-    
-    return {
-        'config': config,
-        'environment': environment,
-        'PROJECT_ROOT': PROJECT_ROOT
-    }
+# ✅ CONFIGURATION - CHANGE ONLY THESE LINES
+VFS_HARDCODED_PATH = "/Workspace/Users/your-email@company.com/VFS"
+PROJECT_FOLDER_NAME = "VFS"
 
-def get_vfs_info():
-    """Get basic VFS info"""
-    return {
-        'project_root': PROJECT_ROOT,
-        'available_environments': ['dev', 'prod']
-    }
+def setup_vfs_path():
+    """Find and setup VFS path"""
+    
+    # Try hardcoded path first
+    if Path(VFS_HARDCODED_PATH).exists():
+        if VFS_HARDCODED_PATH not in sys.path:
+            sys.path.insert(0, VFS_HARDCODED_PATH)
+        return VFS_HARDCODED_PATH
+    
+    # Try auto-detect from current location
+    current = Path.cwd()
+    for path in [current] + list(current.parents):
+        # Check if this is the project directory
+        if (path / "vfs_setup.py").exists():
+            if str(path) not in sys.path:
+                sys.path.insert(0, str(path))
+            return str(path)
+            
+        # Check project folder as subdirectory
+        project_path = path / PROJECT_FOLDER_NAME
+        if project_path.exists() and (project_path / "vfs_setup.py").exists():
+            if str(project_path) not in sys.path:
+                sys.path.insert(0, str(project_path))
+            return str(project_path)
+    
+    # Try environment variable
+    env_path = os.environ.get('VFS_PROJECT_ROOT')
+    if env_path and Path(env_path).exists():
+        if env_path not in sys.path:
+            sys.path.insert(0, env_path)
+        return env_path
+    
+    raise Exception(f"Project not found. Update VFS_HARDCODED_PATH in vfs_setup.py")
+
+# Auto-setup when imported
+PROJECT_ROOT = setup_vfs_path()
