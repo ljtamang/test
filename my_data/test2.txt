@@ -1,48 +1,50 @@
-# VFS/vfs_setup.py
-"""
-VFS Setup - Simple and Clean
-"""
-import sys
-import os
-from pathlib import Path
+# VFS/notebooks/ingestion.ipynb
+# Databricks notebook source
 
-# ✅ CONFIGURATION - CHANGE ONLY THESE LINES
-VFS_HARDCODED_PATH = "/Workspace/Users/your-email@company.com/VFS"
-PROJECT_FOLDER_NAME = "VFS"
+# MAGIC %md
+# MAGIC ## Simple Ingestion - Direct Config Access
 
-def setup_vfs_path():
-    """Find and setup VFS path"""
-    
-    # Try hardcoded path first
-    if Path(VFS_HARDCODED_PATH).exists():
-        if VFS_HARDCODED_PATH not in sys.path:
-            sys.path.insert(0, VFS_HARDCODED_PATH)
-        return VFS_HARDCODED_PATH
-    
-    # Try auto-detect from current location
-    current = Path.cwd()
-    for path in [current] + list(current.parents):
-        # Check if this is the project directory
-        if (path / "vfs_setup.py").exists():
-            if str(path) not in sys.path:
-                sys.path.insert(0, str(path))
-            return str(path)
-            
-        # Check project folder as subdirectory
-        project_path = path / PROJECT_FOLDER_NAME
-        if project_path.exists() and (project_path / "vfs_setup.py").exists():
-            if str(project_path) not in sys.path:
-                sys.path.insert(0, str(project_path))
-            return str(project_path)
-    
-    # Try environment variable
-    env_path = os.environ.get('VFS_PROJECT_ROOT')
-    if env_path and Path(env_path).exists():
-        if env_path not in sys.path:
-            sys.path.insert(0, env_path)
-        return env_path
-    
-    raise Exception(f"Project not found. Update VFS_HARDCODED_PATH in vfs_setup.py")
+# COMMAND ----------
 
-# Auto-setup when imported
-PROJECT_ROOT = setup_vfs_path()
+# ✅ One line setup
+from vfs_setup import PROJECT_ROOT
+
+print(f"📁 Project Root: {PROJECT_ROOT}")
+
+# COMMAND ----------
+
+# ✅ Direct access to config
+from config import load_config, get_database_name, get_batch_size
+
+# Load full config
+config = load_config("dev")
+print(f"🌍 Environment: {config['environment_name']}")
+print(f"🗄️  Database: {config['database']['name']}")
+
+# Or get specific values directly
+database_name = get_database_name("dev")
+batch_size = get_batch_size("dev")
+
+print(f"📊 Batch Size: {batch_size}")
+print(f"🗄️  Database: {database_name}")
+
+# COMMAND ----------
+
+# ✅ Use config values directly in your code
+input_path = f"{config['paths']['input']}/customer_data.csv"
+output_table = config['database']['name'] + ".processed_customers"
+
+print(f"📄 Input: {input_path}")
+print(f"📋 Output Table: {output_table}")
+
+# Your data processing code here...
+# df = spark.read.csv(input_path)
+# df.write.saveAsTable(output_table)
+
+# COMMAND ----------
+
+# ✅ Switch environments easily
+prod_config = load_config("prod")
+if prod_config:
+    print(f"🚀 PROD Database: {prod_config['database']['name']}")
+    print(f"📊 PROD Batch Size: {prod_config['processing']['batch_size']}")
