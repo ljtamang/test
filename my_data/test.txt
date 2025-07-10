@@ -1,164 +1,132 @@
-VFS/
-├── vfs_paths.py                             # ✅ DEFINE PATH HERE ONLY
-├── project_setup.py                        # Simple setup
-├── vfs_config.py                           # Config loader
-├── configs/
-│   ├── dev.yaml                            # Dev environment
-│   └── prod.yaml                           # Prod environment
-├── services/
-│   ├── __init__.py
-│   └── file_service.py                     # Service example
-├── notebooks/
-│   ├── ingestion/
-│   │   └── ie_first_time_ingestion.ipynb
-│   └── processing/
-│       └── data_processing.ipynb
-└── tests/
-    ├── __init__.py
-    └── test_services.py
+import os
+import re
 
-
--------------------
-
-# VFS/vfs_paths.py
-"""
-VFS Path Configuration - CHANGE PATH HERE ONLY
-"""
-import sys
-
-# ✅ DEFINE YOUR FULL PATH HERE - CHANGE ONLY THIS LINE
-VFS_PROJECT_ROOT = "/Workspace/Users/your-email@company.com/VFS"
-
-def ensure_vfs_path():
-    """Add VFS to Python path if not already added"""
-    if VFS_PROJECT_ROOT not in sys.path:
-        sys.path.insert(0, VFS_PROJECT_ROOT)
-    return VFS_PROJECT_ROOT
-
-# Auto-add to path when imported
-PROJECT_ROOT = ensure_vfs_path()
-
-
-------------
-
-# VFS/project_setup.py
-"""
-VFS Project Setup
-"""
-from vfs_paths import PROJECT_ROOT
-from vfs_config import load_config
-
-def setup_vfs(environment="dev"):
-    """Setup VFS with environment"""
+def get_project_root():
+    """
+    Robust project root detection using multiple methods.
     
-    config = load_config(environment)
+    Detection priority:
+    1. __init__.py with __package__ definition (most reliable)
+    2. Common project marker files (setup.py, pyproject.toml, etc.)
+    3. Version control markers (.git, .hg, etc.)
     
-    if config is None:
-        print(f"❌ Environment '{environment}' not found")
-        return None
+    Returns:
+        str: Full path to project root folder
+    """
+    current_path = os.path.abspath(os.getcwd())
     
-    print(f"✅ VFS {environment.upper()} ready!")
-    print(f"📁 Root: {PROJECT_ROOT}")
-    print(f"🗄️  Database: {config['database']['name']}")
-    
-    return {
-        'config': config,
-        'environment': environment,
-        'PROJECT_ROOT': PROJECT_ROOT
-    }
-
-
----------------
-
-
-# VFS/vfs_config.py
-"""
-VFS Configuration loader
-"""
-import yaml
-from pathlib import Path
-from vfs_paths import PROJECT_ROOT
-
-def load_config(environment="dev"):
-    """Load environment configuration"""
-    
-    config_file = Path(PROJECT_ROOT) / "configs" / f"{environment}.yaml"
-    
-    if not config_file.exists():
-        print(f"❌ Config not found: {environment}")
-        return None
-    
-    with open(config_file, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    config["project_root"] = PROJECT_ROOT
-    config["environment_name"] = environment
-    
-    return config
-
-
------------
-
-
-# VFS/notebooks/ingestion/ie_first_time_ingestion.ipynb
-# Databricks notebook source
-
-# MAGIC %md
-# MAGIC ## VFS First Time Ingestion
-
-# COMMAND ----------
-
-# ✅ Simple import - path automatically added
-from vfs_paths import PROJECT_ROOT
-from project_setup import setup_vfs
-
-print(f"📁 VFS Root: {PROJECT_ROOT}")
-
-# COMMAND ----------
-
-# Setup environment
-vfs = setup_vfs("dev")
-config = vfs['config']
-
-print(f"🌍 Environment: {config['environment_name']}")
-print(f"🗄️  Database: {config['database']['name']}")
-
-# COMMAND ----------
-
-# Use service
-from services.file_service import VFSFileService
-
-service = VFSFileService(config)
-result = service.process_files()
-
-print(f"✅ Result: {result}")
-
-
------------
-
-
-# VFS/services/file_service.py
-"""
-VFS File Service
-"""
-from vfs_paths import PROJECT_ROOT
-
-class VFSFileService:
-    """VFS file service"""
-    
-    def __init__(self, config):
-        self.config = config
-        self.environment = config["environment"]["name"]
+    # Define project markers in order of preference
+    project_markers = [
+        # Python package/project files
+        'setup.py',
+        'pyproject.toml', 
+        'setup.cfg',
+        'requirements.txt',
+        'Pipfile',
+        'poetry.lock',
+        'conda.yaml',
+        'environment.yml',
         
-        print(f"🎯 File Service - {self.environment.upper()}")
-        print(f"📁 Project Root: {PROJECT_ROOT}")
-        print(f"📊 Batch Size: {config['processing']['batch_size']}")
+        # Version control
+        '.git',
+        '.hg',
+        '.svn',
+        
+        # Other common markers
+        'Makefile',
+        'Dockerfile',
+        'docker-compose.yml',
+        '.project',
+        '.project_root'
+    ]
     
-    def process_files(self):
-        """Process files"""
-        print(f"🔄 Processing files in {self.environment}")
+    while current_path != os.path.dirname(current_path):  # Stop at filesystem root
+        
+        # METHOD 1: Look for __package__ definition (MOST RELIABLE)
+        init_file = os.path.join(current_path, '__init__.py')
+        if os.path.exists(init_file):
+            try:
+                with open(init_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                # Look for __package__ definition (ignores comments)
+                for line in content.split('\n'):
+                    line = line.strip()
+                    if line.startswith('#'):
+                        continue
+                    if re.match(r'__package__\s*=\s*["\'][^"\']+["\']', line):
+                        return current_path
+                        
+            except (IOError, UnicodeDecodeError):
+                pass
+        
+        # METHOD 2: Look for project marker files
+        for marker in project_markers:
+            if os.path.exists(os.path.join(current_path, marker)):
+                return current_path
+        
+        current_path = os.path.dirname(current_path)
+    
+    raise FileNotFoundError("Project root not found")
+
+
+def get_project_info():
+    """
+    Get detailed project information.
+    """
+    try:
+        project_root = get_project_root()
+        current_dir = os.getcwd()
+        
+        # Try to get package name if available
+        package_name = None
+        init_file = os.path.join(project_root, '__init__.py')
+        if os.path.exists(init_file):
+            try:
+                with open(init_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    for line in content.split('\n'):
+                        line = line.strip()
+                        if line.startswith('#'):
+                            continue
+                        match = re.match(r'__package__\s*=\s*["\']([^"\']+)["\']', line)
+                        if match:
+                            package_name = match.group(1)
+                            break
+            except (IOError, UnicodeDecodeError):
+                pass
+        
         return {
-            "status": "success",
-            "environment": self.environment,
-            "project_root": PROJECT_ROOT
+            'project_root': project_root,
+            'project_folder_name': os.path.basename(project_root),
+            'package_name': package_name,
+            'current_location': current_dir,
+            'relative_path': os.path.relpath(current_dir, project_root)
         }
+        
+    except Exception as e:
+        return {'error': str(e)}
+
+
+# USAGE EXAMPLES:
+
+# Example 1: Simple usage
+project_root = get_project_root()
+print(f"Project root: {project_root}")
+
+# Example 2: Get detailed info
+info = get_project_info()
+if 'error' in info:
+    print(f"Error: {info['error']}")
+else:
+    print(f"Root: {info['project_root']}")
+    print(f"Package: {info['package_name'] or 'Not defined'}")
+    print(f"Called from: {info['relative_path']}")
+
+# Example 3: Build file paths
+root = get_project_root()
+config_path = os.path.join(root, "config", "settings.py")
+data_path = os.path.join(root, "data", "input.csv")
+
+print(f"Config: {config_path}")
+print(f"Data: {data_path}")
