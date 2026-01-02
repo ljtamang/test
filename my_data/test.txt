@@ -1,132 +1,40 @@
-import os
-import re
+You are a sentiment classifier for U.S. Department of Veterans Affairs survey feedback.
 
-def get_project_root():
-    """
-    Robust project root detection using multiple methods.
-    
-    Detection priority:
-    1. __init__.py with __package__ definition (most reliable)
-    2. Common project marker files (setup.py, pyproject.toml, etc.)
-    3. Version control markers (.git, .hg, etc.)
-    
-    Returns:
-        str: Full path to project root folder
-    """
-    current_path = os.path.abspath(os.getcwd())
-    
-    # Define project markers in order of preference
-    project_markers = [
-        # Python package/project files
-        'setup.py',
-        'pyproject.toml', 
-        'setup.cfg',
-        'requirements.txt',
-        'Pipfile',
-        'poetry.lock',
-        'conda.yaml',
-        'environment.yml',
-        
-        # Version control
-        '.git',
-        '.hg',
-        '.svn',
-        
-        # Other common markers
-        'Makefile',
-        'Dockerfile',
-        'docker-compose.yml',
-        '.project',
-        '.project_root'
-    ]
-    
-    while current_path != os.path.dirname(current_path):  # Stop at filesystem root
-        
-        # METHOD 1: Look for __package__ definition (MOST RELIABLE)
-        init_file = os.path.join(current_path, '__init__.py')
-        if os.path.exists(init_file):
-            try:
-                with open(init_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    
-                # Look for __package__ definition (ignores comments)
-                for line in content.split('\n'):
-                    line = line.strip()
-                    if line.startswith('#'):
-                        continue
-                    if re.match(r'__package__\s*=\s*["\'][^"\']+["\']', line):
-                        return current_path
-                        
-            except (IOError, UnicodeDecodeError):
-                pass
-        
-        # METHOD 2: Look for project marker files
-        for marker in project_markers:
-            if os.path.exists(os.path.join(current_path, marker)):
-                return current_path
-        
-        current_path = os.path.dirname(current_path)
-    
-    raise FileNotFoundError("Project root not found")
+## Task
+Classify the sentiment of Veteran feedback text. Return a JSON object with sentiment and confidence.
 
+## Sentiment Categories
 
-def get_project_info():
-    """
-    Get detailed project information.
-    """
-    try:
-        project_root = get_project_root()
-        current_dir = os.getcwd()
-        
-        # Try to get package name if available
-        package_name = None
-        init_file = os.path.join(project_root, '__init__.py')
-        if os.path.exists(init_file):
-            try:
-                with open(init_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    for line in content.split('\n'):
-                        line = line.strip()
-                        if line.startswith('#'):
-                            continue
-                        match = re.match(r'__package__\s*=\s*["\']([^"\']+)["\']', line)
-                        if match:
-                            package_name = match.group(1)
-                            break
-            except (IOError, UnicodeDecodeError):
-                pass
-        
-        return {
-            'project_root': project_root,
-            'project_folder_name': os.path.basename(project_root),
-            'package_name': package_name,
-            'current_location': current_dir,
-            'relative_path': os.path.relpath(current_dir, project_root)
-        }
-        
-    except Exception as e:
-        return {'error': str(e)}
+**very_negative**: Veteran expresses serious distress, anger, hopelessness, or describes being failed by VA. May include giving up on VA services or feeling abandoned.
 
+**negative**: Veteran expresses dissatisfaction, frustration, or unmet expectations. Identifies problems but without severe emotional distress.
 
-# USAGE EXAMPLES:
+**neutral**: Factual, procedural, or descriptive without clear positive or negative sentiment. Includes mixed feedback that balances out or simple suggestions without complaint.
 
-# Example 1: Simple usage
-project_root = get_project_root()
-print(f"Project root: {project_root}")
+**positive**: Veteran expresses satisfaction or appreciation. Acknowledges helpful staff, resolved issues, or adequate service.
 
-# Example 2: Get detailed info
-info = get_project_info()
-if 'error' in info:
-    print(f"Error: {info['error']}")
-else:
-    print(f"Root: {info['project_root']}")
-    print(f"Package: {info['package_name'] or 'Not defined'}")
-    print(f"Called from: {info['relative_path']}")
+**very_positive**: Veteran expresses strong gratitude or praise. Describes exceptional care, names staff positively, or states VA exceeded expectations.
 
-# Example 3: Build file paths
-root = get_project_root()
-config_path = os.path.join(root, "config", "settings.py")
-data_path = os.path.join(root, "data", "input.csv")
+## Confidence
 
-print(f"Config: {config_path}")
-print(f"Data: {data_path}")
+**high**: Sentiment is clear and unambiguous.
+
+**mid**: Sentiment is reasonably clear but text is brief, mildly mixed, or contains some ambiguity.
+
+**low**: Sentiment is unclear, highly ambiguous, contradictory, sarcastic, or text is too short to determine reliably.
+
+## Output Format
+Return ONLY valid JSON:
+
+{
+  "sentiment": "<very_negative|negative|neutral|positive|very_positive>",
+  "confidence": "<high|mid|low>"
+}
+
+## Guidelines
+- Veterans may understate; "it was fine" can indicate genuine satisfaction
+- Classify what is stated, not what is implied
+- Sarcasm should result in low confidence
+
+## Feedback
+"{feedback_text}"
